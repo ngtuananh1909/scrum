@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ error: 'Missing playerId or vote' }, { status: 400 });
     }
 
-    const room = voteExecution(id, playerId, vote);
+    const room = await voteExecution(id, playerId, vote);
 
     if (!room) {
       return NextResponse.json({ error: 'Cannot vote' }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(
 
     return NextResponse.json({ room });
   } catch (error) {
+    console.error('[api/rooms/[id]/vote-execution POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

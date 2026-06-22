@@ -3,16 +3,29 @@ import { createRoom } from '@/lib/store';
 
 export async function POST(request: Request) {
   try {
-    const { roomId, playerName } = await request.json();
+    const { roomId, playerName, playerId } = await request.json();
 
-    if (!roomId || !playerName) {
-      return NextResponse.json({ error: 'Missing roomId or playerName' }, { status: 400 });
+    if (!roomId || !playerName || !playerId) {
+      return NextResponse.json(
+        { error: 'Missing roomId, playerName, or playerId' },
+        { status: 400 }
+      );
     }
 
-    const { room, player } = createRoom(roomId, playerName);
+    const result = await createRoom(roomId, playerName, playerId);
 
-    return NextResponse.json({ roomId: room.id, playerId: player.id, room, player });
+    if (!result) {
+      return NextResponse.json({ error: 'Cannot create room (already exists?)' }, { status: 400 });
+    }
+
+    return NextResponse.json({
+      roomId: result.room.id,
+      playerId: result.player.id,
+      room: result.room,
+      player: result.player,
+    });
   } catch (error) {
+    console.error('[api/rooms POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

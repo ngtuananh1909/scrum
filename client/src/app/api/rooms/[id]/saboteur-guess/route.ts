@@ -13,14 +13,15 @@ export async function POST(
       return NextResponse.json({ error: 'Missing playerId or guessedSmId' }, { status: 400 });
     }
 
-    const result = saboteurGuess(id, playerId, guessedSmId);
+    const result = await saboteurGuess(id, playerId, guessedSmId);
 
     if (!result) {
       return NextResponse.json({ error: 'Cannot guess' }, { status: 400 });
     }
 
-    return NextResponse.json({ winner: result.winner, correct: result.correct });
+    return NextResponse.json(result);
   } catch (error) {
+    console.error('[api/rooms/[id]/saboteur-guess POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

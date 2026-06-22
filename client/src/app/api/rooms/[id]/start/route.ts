@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { startGame, getRoom, getPlayerRole, getSaboteurs, getSMInfo } from '@/lib/store';
+import { startGame } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -13,24 +13,15 @@ export async function POST(
       return NextResponse.json({ error: 'Missing playerId' }, { status: 400 });
     }
 
-    const room = startGame(id);
-    if (!room) {
+    const result = await startGame(id, playerId);
+
+    if (!result) {
       return NextResponse.json({ error: 'Cannot start game' }, { status: 400 });
     }
 
-    // Get role info for the starting player
-    const roleInfo = getPlayerRole(id, playerId);
-    const saboteurs = getSaboteurs(id, playerId);
-    const smInfo = getSMInfo(id, playerId);
-
-    return NextResponse.json({
-      room,
-      role: roleInfo?.role,
-      isGood: roleInfo?.isGood,
-      saboteurIds: saboteurs,
-      smId: smInfo?.smId
-    });
+    return NextResponse.json(result);
   } catch (error) {
+    console.error('[api/rooms/[id]/start POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

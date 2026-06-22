@@ -7,13 +7,13 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { playerName } = await request.json();
+    const { playerName, playerId } = await request.json();
 
-    if (!playerName) {
-      return NextResponse.json({ error: 'Missing playerName' }, { status: 400 });
+    if (!playerName || !playerId) {
+      return NextResponse.json({ error: 'Missing playerName or playerId' }, { status: 400 });
     }
 
-    const result = joinRoom(id, playerName);
+    const result = await joinRoom(id, playerName, playerId);
 
     if (!result) {
       return NextResponse.json({ error: 'Cannot join room' }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(
 
     return NextResponse.json({ room: result.room, player: result.player });
   } catch (error) {
+    console.error('[api/rooms/[id]/join POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

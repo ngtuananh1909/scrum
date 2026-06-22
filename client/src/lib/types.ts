@@ -53,6 +53,15 @@ export interface GameAction {
   timestamp: number;
 }
 
+export interface ChatMessage {
+  id: number;
+  room_id: string;
+  player_id: string;
+  player_name: string;
+  text: string;
+  created_at: string;
+}
+
 // Helper functions
 export function getSprintSize(playerCount: number, sprintIndex: number): number {
   return SPRINT_SIZES[playerCount]?.[sprintIndex] || 3;

@@ -7,10 +7,13 @@ out/
 dist/
 build/
 
-# Environment
+# Environment — never commit secrets. .env.local.example is the template (explicitly tracked below).
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
+!.env.local.example
 
 # Logs
 *.log
@@ -33,3 +36,11 @@ test-results/
 
 # Vercel
 .vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Supabase local dev
+supabase/.branches
+supabase/.temp

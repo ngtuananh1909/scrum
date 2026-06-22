@@ -1,69 +1,53 @@
 # Say Agile One More Time
 
-A real-time multiplayer social deduction game themed around Agile/Scrum terminology.
+A real-time multiplayer social deduction game themed around Agile/Scrum terminology. Werewolf/Avalon-style: pick a Scrum team for each sprint, vote them in, then secretly vote success/fail.
+
+## Quick start
+
+See **[SETUP.md](./SETUP.md)** for the full step-by-step.
+
+```bash
+cd client
+cp .env.local.example .env.local      # paste your Supabase keys
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 in two browsers to test multiplayer.
 
 ## Game Rules
 
 **Objective:**
 - Good Guys (Scrum Team): Win 3 successful sprints
-- Bad Guys (Saboteurs): Win by failing 3 sprints OR 4 consecutive delays
+- Bad Guys (Saboteurs): Win by failing 3 sprints OR 4 consecutive delays OR correctly guessing the Scrum Master
 
 **Roles:**
 - Good: Scrum Master, Project Manager, Developer, Business Analyst, Tech Lead, Data Analyst
 - Bad: Người trễ task (Saboteur), QC cẩu thả
 
-## Local Development
+**Loop (up to 5 sprints):**
+1. **Planning** — current PO picks a team (size per `SPRINT_SIZES` matrix in `src/lib/types.ts`).
+2. **Team Vote** — all alive players vote agree/reject. Majority wins. Reject rotates PO; 4 consecutive rejects = bad wins.
+3. **Execution** — team members secretly vote success/fail (good forced to success). 1 fail = sprint fails (2 fails needed in sprint 3 of 7-10 player games). Tech Lead on team prevents fail. QC cẩu thả on team bugs the NEXT sprint.
+4. **Win** at 3 good sprints, 3 bad sprints, or 4 consecutive delays. Saboteur can also guess the SM after good wins to steal.
 
-```bash
-cd client
-npm install
-npm run dev
-```
+## Tech stack
 
-Open http://localhost:3000
-
-## Deployment (Vercel Fullstack)
-
-### 1. Create Vercel KV (Free Tier)
-
-1. Go to https://vercel.com/dashboard
-2. Create a new project (import this repo)
-3. Go to Storage tab → Create KV Database
-4. Copy the `KV_REST_API_URL` and `KV_REST_API_TOKEN`
-
-### 2. Deploy to Vercel
-
-```bash
-cd client
-vercel --prod
-```
-
-Or connect your GitHub repo to Vercel for automatic deployments.
-
-### 3. Set Environment Variables
-
-In Vercel project settings, add:
-- `KV_REST_API_URL` = your KV REST API URL
-- `KV_REST_API_TOKEN` = your KV REST API token
-
-## Tech Stack
-
-- **Frontend**: Next.js (App Router), Tailwind CSS, Shadcn UI, Zustand
-- **Backend**: Next.js API Routes (Serverless)
-- **State**: Vercel KV (Redis)
-- **Real-time**: Server-Sent Events (SSE) + Polling fallback
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, shadcn UI, Zustand
+- **Backend**: Next.js API Routes (serverless on Vercel)
+- **State**: Supabase Postgres + Realtime (free tier)
+- **Real-time**: Supabase Realtime (Postgres Changes), polling fallback
+- **Identity**: localStorage UUID (no accounts)
+- **Chat**: in-game room chat via Supabase
 
 ## Architecture
 
 ```
-Client (Browser)
-    │
-    ├──── REST API (createRoom, joinRoom, vote, etc.)
-    │
-    └──── SSE Stream (real-time state updates)
-              │
-              ▼
-         Vercel KV (Redis)
+Browser ──── REST API (create/join/vote/chat) ──► Next.js API Routes ──► Supabase Postgres
+   ▲                                                                              │
+   └──── Realtime WebSocket (postgres_changes on rooms UPDATE + messages INSERT) ──┘
 ```
 
-For multiplayer to work, users must be on the same Vercel deployment with KV configured.
+## Deploy
+
+See [SETUP.md](./SETUP.md) → step 5 for Vercel deployment. Set the three Supabase env vars in the Vercel project settings.

@@ -9,11 +9,11 @@ export async function POST(
     const { id } = await params;
     const { playerId, playerIds } = await request.json();
 
-    if (!playerId || !playerIds) {
+    if (!playerId || !Array.isArray(playerIds)) {
       return NextResponse.json({ error: 'Missing playerId or playerIds' }, { status: 400 });
     }
 
-    const room = proposeTeam(id, playerId, playerIds);
+    const room = await proposeTeam(id, playerId, playerIds);
 
     if (!room) {
       return NextResponse.json({ error: 'Cannot propose team' }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(
 
     return NextResponse.json({ room });
   } catch (error) {
+    console.error('[api/rooms/[id]/propose POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

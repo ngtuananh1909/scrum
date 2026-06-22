@@ -14,7 +14,20 @@ export default function Lobby() {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
-  const { createRoom, joinRoom, roomId: storeRoomId, players, error, clearError } = useGameStore();
+  const {
+    createRoom,
+    joinRoom,
+    roomId: storeRoomId,
+    players,
+    error,
+    clearError,
+    ensurePlayerId,
+  } = useGameStore();
+
+  // Generate / restore persistent player identity on mount.
+  useEffect(() => {
+    ensurePlayerId();
+  }, [ensurePlayerId]);
 
   useEffect(() => {
     if (storeRoomId && players.length > 0) {
@@ -22,16 +35,18 @@ export default function Lobby() {
     }
   }, [storeRoomId, players, router]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!roomId.trim() || !playerName.trim()) return;
     setIsCreating(true);
-    createRoom(roomId.trim(), playerName.trim());
+    await createRoom(roomId.trim(), playerName.trim());
+    setIsCreating(false);
   };
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!roomId.trim() || !playerName.trim()) return;
     setIsJoining(true);
-    joinRoom(roomId.trim(), playerName.trim());
+    await joinRoom(roomId.trim(), playerName.trim());
+    setIsJoining(false);
   };
 
   const generateRoomId = () => {
