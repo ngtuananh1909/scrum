@@ -15,12 +15,6 @@ A real-time multiplayer social deduction game themed around Agile/Scrum terminol
 ## Local Development
 
 ```bash
-# Terminal 1 - Start Socket.io server
-cd server
-npm install
-node index.js
-
-# Terminal 2 - Start Next.js client
 cd client
 npm install
 npm run dev
@@ -28,45 +22,48 @@ npm run dev
 
 Open http://localhost:3000
 
-### Running Tests
+## Deployment (Vercel Fullstack)
+
+### 1. Create Vercel KV (Free Tier)
+
+1. Go to https://vercel.com/dashboard
+2. Create a new project (import this repo)
+3. Go to Storage tab → Create KV Database
+4. Copy the `KV_REST_API_URL` and `KV_REST_API_TOKEN`
+
+### 2. Deploy to Vercel
 
 ```bash
-# Backend tests (Vitest)
-cd server && npm test
-
-# E2E tests (Playwright) - requires both servers running
-npx playwright test
+cd client
+vercel --prod
 ```
 
-## Deployment
+Or connect your GitHub repo to Vercel for automatic deployments.
 
-### Step 1: Deploy Socket.io Server (Railway)
+### 3. Set Environment Variables
 
-1. Go to https://railway.app
-2. Connect your GitHub repo
-3. Select the `server` folder as the root
-4. Deploy - Railway automatically supports WebSockets
-
-After deployment, copy the Railway URL (e.g., `https://scrum-server.up.railway.app`)
-
-### Step 2: Deploy Frontend (Vercel)
-
-1. Go to https://vercel.com
-2. Import the `client` folder
-3. Add environment variable:
-   - `NEXT_PUBLIC_SOCKET_URL` = your Railway URL (e.g., `https://scrum-server.up.railway.app`)
-4. Deploy
-
-### Alternative: Deploy Both on Railway
-
-Railway supports both Node.js and Next.js:
-
-1. Create a `package.json` in root with `concurrently` to run both
-2. Or deploy server on Railway and client separately on Vercel
+In Vercel project settings, add:
+- `KV_REST_API_URL` = your KV REST API URL
+- `KV_REST_API_TOKEN` = your KV REST API token
 
 ## Tech Stack
 
-- **Frontend**: Next.js, Tailwind CSS, Shadcn UI, Zustand
-- **Backend**: Node.js, Express, Socket.io
-- **Testing**: Vitest, Playwright
-- **Hosting**: Vercel (frontend), Railway (backend with WebSocket)
+- **Frontend**: Next.js (App Router), Tailwind CSS, Shadcn UI, Zustand
+- **Backend**: Next.js API Routes (Serverless)
+- **State**: Vercel KV (Redis)
+- **Real-time**: Server-Sent Events (SSE) + Polling fallback
+
+## Architecture
+
+```
+Client (Browser)
+    │
+    ├──── REST API (createRoom, joinRoom, vote, etc.)
+    │
+    └──── SSE Stream (real-time state updates)
+              │
+              ▼
+         Vercel KV (Redis)
+```
+
+For multiplayer to work, users must be on the same Vercel deployment with KV configured.
