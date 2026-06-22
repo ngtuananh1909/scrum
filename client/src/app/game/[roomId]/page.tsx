@@ -15,23 +15,28 @@ export default function GamePage() {
 
   const {
     players, phase, currentSprint, proposedTeam, currentPO, myRole, isGood,
-    saboteurIds, goodWins, badWins, consecutiveDelays, pmOverrideUsed,
-    proposeTeam, voteTeam, voteExecution, pmOverride, saboteurGuess,
-    startGame, connect, disconnect, playerId, socket
+    saboteurIds, goodWins, badWins, consecutiveDelays,
+    proposeTeam, voteTeam, voteExecution, saboteurGuess,
+    startGame, subscribeToRoom, unsubscribeFromRoom, playerId, roomId: storeRoomId
   } = useGameStore();
 
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
 
+  // Join room if we have roomId but not subscribed yet
   useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
-
-  useEffect(() => {
-    if (socket) {
-      socket.emit('joinRoom', { roomId, playerName: 'Player' });
+    if (roomId && !storeRoomId) {
+      // Room not joined yet - redirect to lobby
+      window.location.href = '/';
     }
-  }, [socket, roomId]);
+  }, [roomId, storeRoomId]);
+
+  // Subscribe to room updates when we have a room
+  useEffect(() => {
+    if (storeRoomId) {
+      subscribeToRoom();
+      return () => unsubscribeFromRoom();
+    }
+  }, [storeRoomId, subscribeToRoom, unsubscribeFromRoom]);
 
   const isPO = currentPO?.id === playerId;
   const isOnTeam = proposedTeam.includes(playerId || '');
@@ -86,7 +91,6 @@ export default function GamePage() {
               <Button
                 key={p.id}
                 variant={selectedPlayers.includes(p.id) ? 'default' : 'outline'}
-                size="sm"
                 onClick={() => togglePlayer(p.id)}
               >
                 {p.name}

@@ -14,12 +14,7 @@ export default function Lobby() {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
 
-  const { createRoom, joinRoom, roomId: storeRoomId, players, connect, disconnect, error, clearError } = useGameStore();
-
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+  const { createRoom, joinRoom, roomId: storeRoomId, players, error, clearError } = useGameStore();
 
   useEffect(() => {
     if (storeRoomId && players.length > 0) {

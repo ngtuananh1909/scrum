@@ -1,53 +1,44 @@
-import { create } from 'zustand';
-import io, { Socket } from 'socket.io-client';
+'use client';
 
-interface Player {
-  id: string;
-  name: string;
-  role?: string;
-  isAlive: boolean;
-  socketId?: string;
-}
+import { create } from 'zustand';
+import type { Player, Phase } from '@/lib/types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 interface RoomState {
   roomId: string | null;
   playerId: string | null;
   players: Player[];
-  phase: 'lobby' | 'planning' | 'teamVoting' | 'execution' | 'sprintResult' | 'ended' | null;
+  phase: Phase | null;
   currentSprint: number;
   proposedTeam: string[];
   currentPO: Player | null;
   myRole: string | null;
   isGood: boolean;
   saboteurIds: string[];
-  clientId: string | null;
+  smId: string | null;
   goodWins: number;
   badWins: number;
   consecutiveDelays: number;
   techLeadPresent: boolean;
-  qcBugged: boolean;
-  pmOverrideUsed: boolean;
-  dataAnalystCheckUsed: boolean;
   error: string | null;
-  socket: Socket | null;
+  eventSource: EventSource | null;
+  pollingInterval: ReturnType<typeof setInterval> | null;
 }
 
 interface GameStore extends RoomState {
-  connect: () => void;
-  disconnect: () => void;
-  createRoom: (roomId: string, playerName: string) => void;
-  joinRoom: (roomId: string, playerName: string) => void;
-  startGame: () => void;
-  proposeTeam: (playerIds: string[]) => void;
-  voteTeam: (vote: 'agree' | 'reject') => void;
-  voteExecution: (vote: 'success' | 'fail') => void;
-  pmOverride: (playerIds: string[]) => void;
-  dataAnalystCheck: (targetPlayerId: string) => void;
-  saboteurGuess: (guessedSmId: string) => void;
+  createRoom: (roomId: string, playerName: string) => Promise<void>;
+  joinRoom: (roomId: string, playerName: string) => Promise<void>;
+  startGame: () => Promise<void>;
+  proposeTeam: (playerIds: string[]) => Promise<void>;
+  voteTeam: (vote: 'agree' | 'reject') => Promise<void>;
+  voteExecution: (vote: 'success' | 'fail') => Promise<void>;
+  saboteurGuess: (guessedSmId: string) => Promise<void>;
+  subscribeToRoom: () => void;
+  unsubscribeFromRoom: () => void;
   clearError: () => void;
+  setRoomFromResponse: (data: { room: any; playerId?: string; role?: string; isGood?: boolean; saboteurIds?: string[]; smId?: string }) => void;
 }
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
 
 export const useGameStore = create<GameStore>((set, get) => ({
   roomId: null,
@@ -60,181 +51,269 @@ export const useGameStore = create<GameStore>((set, get) => ({
   myRole: null,
   isGood: true,
   saboteurIds: [],
-  clientId: null,
+  smId: null,
   goodWins: 0,
   badWins: 0,
   consecutiveDelays: 0,
   techLeadPresent: false,
-  qcBugged: false,
-  pmOverrideUsed: false,
-  dataAnalystCheckUsed: false,
   error: null,
-  socket: null,
+  eventSource: null,
+  pollingInterval: null,
 
-  connect: () => {
-    const socket = io(SOCKET_URL);
+  setRoomFromResponse: (data) => {
+    const { room, playerId, role, isGood, saboteurIds, smId } = data;
 
-    socket.on('connect', () => {
-      set({ playerId: socket.id || null });
+    set({
+      players: room.players || [],
+      phase: room.phase || null,
+      currentSprint: room.currentSprint || 0,
+      proposedTeam: room.proposedTeam || [],
+      currentPO: room.currentPO !== undefined ? (room.players || [])[room.currentPO] : null,
+      goodWins: room.goodWins || 0,
+      badWins: room.badWins || 0,
+      consecutiveDelays: room.consecutiveDelays || 0,
+      techLeadPresent: room.techLeadPresent || false,
+      ...(playerId && { playerId }),
+      ...(role && { myRole: role }),
+      ...(isGood !== undefined && { isGood }),
+      ...(saboteurIds && { saboteurIds }),
+      ...(smId && { smId }),
     });
+  },
 
-    socket.on('error', ({ message }: { message: string }) => {
-      set({ error: message });
-    });
+  createRoom: async (roomId: string, playerName: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, playerName }),
+      });
 
-    socket.on('roomCreated', ({ roomId, playerId }: { roomId: string; playerId: string }) => {
-      set({ roomId, playerId });
-    });
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to create room' });
+        return;
+      }
 
-    socket.on('roomJoined', ({ roomId, playerId }: { roomId: string; playerId: string }) => {
-      set({ roomId, playerId });
-    });
+      const data = await res.json();
+      set({
+        roomId: data.roomId,
+        playerId: data.playerId,
+      });
+      get().setRoomFromResponse(data);
+      get().subscribeToRoom();
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
 
-    socket.on('playerJoined', ({ players }: { players: Player[] }) => {
-      set({ players });
-    });
+  joinRoom: async (roomId: string, playerName: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName }),
+      });
 
-    socket.on('playerLeft', ({ player }: { player: Player }) => {
-      set((state) => ({
-        players: state.players.filter((p) => p.id !== player.id),
-      }));
-    });
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to join room' });
+        return;
+      }
 
-    socket.on('roleAssigned', ({ role, isGood }: { role: string; isGood: boolean }) => {
-      set({ myRole: role, isGood });
-    });
+      const data = await res.json();
+      set({
+        roomId,
+        playerId: data.player.id,
+      });
+      get().setRoomFromResponse(data);
+      get().subscribeToRoom();
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
 
-    socket.on('saboteursRevealed', ({ saboteurIds }: { saboteurIds: string[] }) => {
-      set({ saboteurIds });
-    });
+  startGame: async () => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
 
-    socket.on('clientRevealed', ({ clientId }: { clientId: string }) => {
-      set({ clientId });
-    });
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
 
-    socket.on('gameStarted', ({ players, currentPO, currentSprint }: { players: Player[]; currentPO: Player; currentSprint: number }) => {
-      set({ players, currentPO, currentSprint, phase: 'planning' });
-    });
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to start game' });
+        return;
+      }
 
-    socket.on('phaseChanged', ({ phase }: { phase: string }) => {
-      set({ phase: phase as RoomState['phase'] });
-    });
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
 
-    socket.on('teamProposed', ({ proposedTeam }: { proposedTeam: string[] }) => {
-      set({ proposedTeam });
-    });
+  proposeTeam: async (playerIds: string[]) => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
 
-    socket.on('teamAccepted', () => {
-      set({ consecutiveDelays: 0 });
-    });
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/propose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, playerIds }),
+      });
 
-    socket.on('teamRejected', () => {
-      set((state) => ({ consecutiveDelays: state.consecutiveDelays + 1 }));
-    });
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to propose team' });
+        return;
+      }
 
-    socket.on('newPO', ({ currentPO }: { currentPO: Player }) => {
-      set({ currentPO });
-    });
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
 
-    socket.on('sprintSuccess', () => {
-      set((state) => ({ goodWins: state.goodWins + 1 }));
-    });
+  voteTeam: async (vote: 'agree' | 'reject') => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
 
-    socket.on('sprintFailed', () => {
-      set((state) => ({ badWins: state.badWins + 1 }));
-    });
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/vote-team`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, vote }),
+      });
 
-    socket.on('techLeadSaved', () => {
-      set({ techLeadPresent: true });
-    });
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to vote' });
+        return;
+      }
 
-    socket.on('nextSprint', ({ currentSprint }: { currentSprint: number }) => {
-      set({ currentSprint, proposedTeam: [] });
-    });
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
 
-    socket.on('gameEnded', () => {
+  voteExecution: async (vote: 'success' | 'fail') => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/vote-execution`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, vote }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to vote' });
+        return;
+      }
+
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      set({ error: 'Network error' });
+    }
+  },
+
+  saboteurGuess: async (guessedSmId: string) => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/saboteur-guess`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, guessedSmId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        set({ error: data.error || 'Failed to guess' });
+        return;
+      }
+
+      const data = await res.json();
       set({ phase: 'ended' });
-    });
-
-    socket.on('pmOverrideUsed', () => {
-      set({ pmOverrideUsed: true });
-    });
-
-    socket.on('playerDied', ({ playerId }: { playerId: string }) => {
-      set((state) => ({
-        players: state.players.map((p) =>
-          p.id === playerId ? { ...p, isAlive: false } : p
-        ),
-      }));
-    });
-
-    set({ socket });
-  },
-
-  disconnect: () => {
-    const { socket } = get();
-    if (socket) {
-      socket.disconnect();
-      set({ socket: null });
+    } catch (error) {
+      set({ error: 'Network error' });
     }
   },
 
-  createRoom: (roomId: string, playerName: string) => {
-    const { socket } = get();
-    socket?.emit('createRoom', { roomId, playerName });
-  },
+  subscribeToRoom: () => {
+    const { roomId, eventSource, pollingInterval } = get();
+    if (!roomId) return;
 
-  joinRoom: (roomId: string, playerName: string) => {
-    const { socket } = get();
-    socket?.emit('joinRoom', { roomId, playerName });
-  },
+    // Clean up existing connections
+    get().unsubscribeFromRoom();
 
-  startGame: () => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('startGame', { roomId });
+    // Try SSE first
+    try {
+      const es = new EventSource(`${API_URL}/api/rooms/${roomId}/stream`);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.room) {
+            get().setRoomFromResponse({ room: data.room });
+          }
+        } catch {}
+      };
+      es.onerror = () => {
+        // SSE failed, fall back to polling
+        es.close();
+        const interval = setInterval(async () => {
+          const { roomId } = get();
+          if (!roomId) return;
+          try {
+            const res = await fetch(`${API_URL}/api/rooms/${roomId}`);
+            if (res.ok) {
+              const data = await res.json();
+              get().setRoomFromResponse(data);
+            }
+          } catch {}
+        }, 2000);
+        set({ pollingInterval: interval });
+      };
+      set({ eventSource: es });
+    } catch {
+      // Fall back to polling immediately
+      const interval = setInterval(async () => {
+        const { roomId } = get();
+        if (!roomId) return;
+        try {
+          const res = await fetch(`${API_URL}/api/rooms/${roomId}`);
+          if (res.ok) {
+            const data = await res.json();
+            get().setRoomFromResponse(data);
+          }
+        } catch {}
+      }, 2000);
+      set({ pollingInterval: interval });
     }
   },
 
-  proposeTeam: (playerIds: string[]) => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('proposeTeam', { roomId, playerIds });
+  unsubscribeFromRoom: () => {
+    const { eventSource, pollingInterval } = get();
+    if (eventSource) {
+      eventSource.close();
+      set({ eventSource: null });
     }
-  },
-
-  voteTeam: (vote: 'agree' | 'reject') => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('voteTeam', { roomId, vote });
-    }
-  },
-
-  voteExecution: (vote: 'success' | 'fail') => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('voteExecution', { roomId, vote });
-    }
-  },
-
-  pmOverride: (playerIds: string[]) => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('pmOverride', { roomId, playerIds });
-    }
-  },
-
-  dataAnalystCheck: (targetPlayerId: string) => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('dataAnalystCheck', { roomId, targetPlayerId });
-    }
-  },
-
-  saboteurGuess: (guessedSmId: string) => {
-    const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit('saboteurGuess', { roomId, guessedSmId });
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      set({ pollingInterval: null });
     }
   },
 
