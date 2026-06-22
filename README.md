@@ -12,9 +12,7 @@ A real-time multiplayer social deduction game themed around Agile/Scrum terminol
 - Good: Scrum Master, Project Manager, Developer, Business Analyst, Tech Lead, Data Analyst
 - Bad: Người trễ task (Saboteur), QC cẩu thả
 
-## Setup
-
-### Local Development
+## Local Development
 
 ```bash
 # Terminal 1 - Start Socket.io server
@@ -42,26 +40,33 @@ npx playwright test
 
 ## Deployment
 
-### Frontend (Vercel)
-```bash
-cd client
-vercel --prod
-```
-Set `NEXT_PUBLIC_SOCKET_URL` environment variable to your Socket.io server URL.
+### Step 1: Deploy Socket.io Server (Railway)
 
-### Backend (Socket.io Server)
-Requires a Node.js host with WebSocket support:
-- **Railway**: `railway up`
-- **Render**: Connect GitHub repo
-- **Fly.io**: `fly launch`
+1. Go to https://railway.app
+2. Connect your GitHub repo
+3. Select the `server` folder as the root
+4. Deploy - Railway automatically supports WebSockets
 
-### Environment Variables
-```
-NEXT_PUBLIC_SOCKET_URL=https://your-socket-server.railway.app
-```
+After deployment, copy the Railway URL (e.g., `https://scrum-server.up.railway.app`)
+
+### Step 2: Deploy Frontend (Vercel)
+
+1. Go to https://vercel.com
+2. Import the `client` folder
+3. Add environment variable:
+   - `NEXT_PUBLIC_SOCKET_URL` = your Railway URL (e.g., `https://scrum-server.up.railway.app`)
+4. Deploy
+
+### Alternative: Deploy Both on Railway
+
+Railway supports both Node.js and Next.js:
+
+1. Create a `package.json` in root with `concurrently` to run both
+2. Or deploy server on Railway and client separately on Vercel
 
 ## Tech Stack
 
 - **Frontend**: Next.js, Tailwind CSS, Shadcn UI, Zustand
 - **Backend**: Node.js, Express, Socket.io
 - **Testing**: Vitest, Playwright
+- **Hosting**: Vercel (frontend), Railway (backend with WebSocket)
