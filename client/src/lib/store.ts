@@ -39,6 +39,7 @@ function normalizeRoom(room: Room): Room {
     dataAnalystCheckUsed: room.dataAnalystCheckUsed ?? false,
     businessAnalystCheckUsed: room.businessAnalystCheckUsed ?? false,
     qcRedoUsed: room.qcRedoUsed ?? false,
+    deadlineUsed: room.deadlineUsed ?? false,
     sepSilencedPlayerId: room.sepSilencedPlayerId ?? null,
     deadlineSilenced: room.deadlineSilenced ?? false,
     techDebtActive: room.techDebtActive ?? false,
@@ -104,6 +105,7 @@ export async function createRoom(
     dataAnalystCheckUsed: false,
     businessAnalystCheckUsed: false,
     qcRedoUsed: false,
+    deadlineUsed: false,
     sepSilencedPlayerId: null,
     deadlineSilenced: false,
     techDebtActive: false,
@@ -535,19 +537,54 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
 }
 
 // Called by client after sprintResult acknowledged OR auto-expired.
-// Moves from sprintResult → night (tan ca) for next sprint.
+// Moves from sprintResult → betweenSprintDiscussion (90s) for next sprint.
 export async function advanceFromSprintResult(roomId: string, playerId?: string): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
   if (room.phase !== 'sprintResult') return null;
 
   const now = Date.now();
-  room.phase = 'night';
+  room.phase = 'betweenSprintDiscussion';
   room.phaseStartedAt = now;
-  room.phaseDeadlineAt = now + TIMER_DEFAULTS.nightRecurringMs;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.discussionMs;
 
   await writeRoom(room);
   return room;
+}
+
+// Called by client after betweenSprintDiscussion acknowledged OR auto-expired.
+// Moves from betweenSprintDiscussion → night (tan ca) for skill window.
+export async function advanceFromDiscussion(roomId: string, playerId?: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'betweenSprintDiscussion') return null;
+
+  const now = Date.now();
+  room.phase = 'night';
+  room.phaseStartedAt = now;
+  // First night (after game start) uses nightFirstMs (30s);
+  // subsequent nights use nightRecurringMs (60s). currentSprint > 0 ⇒ recurring.
+  room.phaseDeadlineAt =
+    now + (room.currentSprint === 0 ? TIMER_DEFAULTS.nightFirstMs : TIMER_DEFAULTS.nightRecurringMs);
+
+  await writeRoom(room);
+  return room;
+}
+
+// Helper: returns true if every "skill-once-per-game" player in the room has
+// already used their skill. Used to skip the night phase early.
+export function allSkillsUsed(room: Room): boolean {
+  const hasRole = (r: PlayerRole) => room.players.some((p) => p.isAlive && p.role === r);
+
+  if (hasRole('Project Manager') && !room.pmOverrideUsed) return false;
+  if (hasRole('Quality Controller') && !room.qcRedoUsed) return false;
+  // Data Analyst skill only available from Sprint 2 (currentSprint >= 1).
+  if (hasRole('Data Analyst') && room.currentSprint >= 1 && !room.dataAnalystCheckUsed) return false;
+  // Business Analyst is a check skill — also trackable.
+  if (hasRole('Business Analyst') && !room.businessAnalystCheckUsed) return false;
+  if (hasRole('Deadline') && !room.deadlineUsed) return false;
+  // Sếp is per-sprint (auto-resets each sprint) — never blocks skip.
+  return true;
 }
 
 // Called by client to advance from night (tan ca) → planning (vào ca).
@@ -582,7 +619,11 @@ export async function autoAdvancePhase(roomId: string): Promise<Room | null> {
 
   switch (room.phase) {
     case 'night':
+      // Skip early if every skill-once-per-game player has used their skill.
+      if (allSkillsUsed(room)) return nightAdvance(roomId);
       return nightAdvance(roomId);
+    case 'betweenSprintDiscussion':
+      return advanceFromDiscussion(roomId);
     case 'sprintResult':
       return advanceFromSprintResult(roomId);
     case 'teamVoting':
@@ -663,7 +704,8 @@ export async function skillPmOverride(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'planning') return null;
+  // Per new spec: PM override can only be set up during night phase.
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Project Manager') return null;
@@ -697,7 +739,7 @@ export async function skillPmDefer(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'planning') return null;
+  if (room.phase !== 'night') return null;
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Project Manager') return null;
   if (room.pmOverrideUsed) return null;
@@ -722,7 +764,7 @@ export async function skillBusinessAnalystCheck(
 ): Promise<{ room: Room; private: BACheckResult } | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (!['planning', 'teamVoting', 'execution', 'sprintResult'].includes(room.phase)) return null;
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Business Analyst') return null;
@@ -753,7 +795,7 @@ export async function skillQcRedo(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'sprintResult') return null;
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Quality Controller') return null;
@@ -824,7 +866,7 @@ export async function skillDataAnalystCheck(
 ): Promise<{ room: Room; private: DACheckResult } | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (!['planning', 'sprintResult'].includes(room.phase)) return null;
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Data Analyst') return null;
@@ -851,7 +893,7 @@ export async function skillSepSilence(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'planning') return null;
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Ông sếp khó ưa') return null;
@@ -873,12 +915,13 @@ export async function skillDeadlineSilence(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'planning') return null;
+  if (room.phase !== 'night') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Deadline') return null;
-  if (room.deadlineSilenced) return null;
+  if (room.deadlineUsed) return null;
 
+  room.deadlineUsed = true;
   room.deadlineSilenced = true;
   await writeRoom(room);
   return room;

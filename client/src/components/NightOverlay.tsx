@@ -5,7 +5,7 @@ import { useGameStore } from '@/store/gameStore';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { getAvatarUrl } from '@/lib/utils';
-import { isGoodRole, isBadRole } from '@/lib/types';
+import { isGoodRole, isBadRole, ROLE_SKILLS, type PlayerRole } from '@/lib/types';
 
 // Full-screen overlay shown whenever phase === 'night'.
 // - SM: full red/green role table for all players (every night).
@@ -143,11 +143,11 @@ export function NightOverlay() {
                           {isMe && ' (Bạn)'}
                         </p>
                         <p
-                          className={`text-[10px] font-mono truncate ${
+                          className={`text-[10px] font-mono truncate font-bold ${
                             bad ? 'text-error' : 'text-secondary'
                           }`}
                         >
-                          {role}
+                          {bad ? 'PHE XẤU' : 'PHE TỐT'}
                         </p>
                       </div>
                     </div>
@@ -318,6 +318,12 @@ function OtherRoleHint({
     'Deadline',
   ].includes(myRole);
 
+  const skill = ROLE_SKILLS[myRole as PlayerRole];
+  // Reveal role + skill only on the very first night. From sprint 2 onwards,
+  // players remember their role/skill from the initial reveal — no need to show again.
+  const currentSprint = useGameStore((s) => s.currentSprint);
+  const showReveal = currentSprint === 0;
+
   return (
     <>
       <p className="text-sm text-center text-muted-foreground">
@@ -325,12 +331,36 @@ function OtherRoleHint({
           ? 'Giờ tan ca — bạn có thể dùng kỹ năng (nút ở góc dưới bên phải).'
           : 'Đang chờ giờ tan ca kết thúc để vào ca làm việc...'}
       </p>
-      <div className="glass-panel rounded-lg p-3 text-center">
-        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block mb-1">
-          Vai trò của bạn
-        </span>
-        <span className="text-sm font-semibold text-foreground">{myRole}</span>
-      </div>
+      {showReveal && (
+        <>
+          <div className="glass-panel rounded-lg p-3 text-center">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block mb-1">
+              Vai trò của bạn
+            </span>
+            <span className="text-sm font-semibold text-foreground">{myRole}</span>
+          </div>
+          {skill && (
+            <div className="rounded-xl p-3 border border-primary/30 bg-primary/5 space-y-1.5">
+              <div className="flex items-center gap-1.5 justify-center">
+                <span className="material-symbols-outlined text-xs text-primary">
+                  auto_awesome
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-primary">
+                  Kỹ năng — {skill.name}
+                </span>
+              </div>
+              <p className="text-xs text-foreground/90 leading-relaxed text-center">
+                {skill.effect}
+              </p>
+              {skill.trigger && (
+                <p className="text-[10px] font-mono text-primary/80 italic text-center pt-1 border-t border-primary/20">
+                  ⏱ {skill.trigger}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
       <Button onClick={onContinue} variant="outline" className="w-full">
         <span className="material-symbols-outlined mr-2">wb_sunny</span>
         Vào ca

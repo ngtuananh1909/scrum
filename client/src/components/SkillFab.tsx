@@ -55,9 +55,11 @@ export function SkillFab() {
     cooldown: string; // e.g. "1/1", "0/1", "Used this sprint"
   }> = [];
 
-  // PM override: planning only, once per game. Show "1/1" once used; show
-  // "Deferred" if PM chose to skip this sprint.
-  if (myRole === 'Project Manager' && phase === 'planning') {
+  // Skills are only usable during the night (tan ca) phase.
+  if (phase !== 'night') return null;
+
+  // PM override: night only, once per game.
+  if (myRole === 'Project Manager' && phase === 'night') {
     if (pmOverrideUsed) {
       buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral', cooldown: '1/1' });
     } else if (pmDeferredThisSprint) {
@@ -66,41 +68,37 @@ export function SkillFab() {
       buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral', cooldown: '0/1' });
     }
   }
-  if (
-    myRole === 'Business Analyst' &&
-    !businessAnalystCheckUsed &&
-    ['planning', 'teamVoting', 'execution', 'sprintResult'].includes(phase)
-  ) {
+  if (myRole === 'Business Analyst' && !businessAnalystCheckUsed && phase === 'night') {
     buttons.push({ key: 'ba', label: 'BA Check', icon: 'search_check', accent: 'good', cooldown: '0/1' });
   }
-  if (myRole === 'Quality Controller' && phase === 'sprintResult' && !qcRedoUsed) {
+  if (myRole === 'Quality Controller' && phase === 'night' && !qcRedoUsed) {
     buttons.push({ key: 'qc', label: 'QC Redo', icon: 'restart_alt', accent: 'good', cooldown: '0/1' });
   }
   if (
     myRole === 'Data Analyst' &&
     !dataAnalystCheckUsed &&
     currentSprint >= 1 &&
-    ['planning', 'sprintResult'].includes(phase) &&
+    phase === 'night' &&
     prevSprintTeam.length > 0
   ) {
     buttons.push({ key: 'da', label: 'DA Check', icon: 'analytics', accent: 'good', cooldown: '0/1' });
   }
-  if (myRole === 'Ông sếp khó ưa' && phase === 'planning') {
+  if (myRole === 'Ông sếp khó ưa' && phase === 'night' && !sepSilencedPlayerId) {
     buttons.push({
       key: 'sep',
       label: 'Khóa miệng',
       icon: 'volume_off',
       accent: 'bad',
-      cooldown: sepSilencedPlayerId ? 'Used this sprint' : '0/1',
+      cooldown: '0/1',
     });
   }
-  if (myRole === 'Deadline' && phase === 'planning') {
+  if (myRole === 'Deadline' && phase === 'night' && !deadlineSilenced) {
     buttons.push({
       key: 'deadline',
       label: 'Áp lực tối đa',
       icon: 'whatshot',
       accent: 'bad',
-      cooldown: deadlineSilenced ? 'Used this sprint' : '0/1',
+      cooldown: '0/1',
     });
   }
 

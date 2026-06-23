@@ -60,6 +60,88 @@ export const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
   'Technical Debt': 'Nếu bạn tham gia Sprint hiện tại, Sprint tiếp theo bắt buộc cộng thêm +1 nhân sự.',
 };
 
+// Kỹ năng tách riêng khỏi flavor text: name + effect (cơ chế game) + trigger (gợi ý thời điểm).
+export const ROLE_SKILLS: Record<PlayerRole, { name: string; effect: string; trigger?: string }> = {
+  // === GOOD ===
+  'Scrum Master': {
+    name: 'Nội gián phe tốt',
+    effect: 'Biết danh tính toàn bộ phe Phá Dự Án từ đầu game. Phe xấu thắng nếu Người trễ task đoán đúng bạn cuối game.',
+    trigger: 'Passive — luôn biết',
+  },
+  'Project Manager': {
+    name: 'Chiếm chỉ định nhóm',
+    effect: '1 lần/game. Khi nhóm bị reject, dùng skill để bỏ qua biểu quyết, đi thẳng vào thực thi Sprint.',
+    trigger: 'Dùng trong Team Voting khi team vừa bị reject',
+  },
+  'Developer': {
+    name: 'Lá phiếu trung thành',
+    effect: 'Bắt buộc vote SUCCESS khi đi Sprint. Lá phiếu quan trọng để hoàn thành sprint.',
+    trigger: 'Passive — tự động khi vote Execution',
+  },
+  'Business Analyst': {
+    name: 'Kiểm tra 2 người',
+    effect: '1 lần/game. Chọn 2 người bất kỳ. Quản trò trả Yes nếu ≥1 thuộc phe xấu, No nếu cả 2 phe tốt.',
+    trigger: 'Dùng trong giờ tan ca hoặc Planning',
+  },
+  'Quality Controller': {
+    name: 'Yêu cầu làm lại Sprint',
+    effect: '1 lần/game. Hủy kết quả Sprint vừa công bố, lập kế hoạch lại từ đầu (không tính sprint đã chạy).',
+    trigger: 'Dùng ngay sau khi Sprint Result công bố',
+  },
+  'Technical Leader': {
+    name: 'Gánh team',
+    effect: 'Nếu trong nhóm Sprint có TL và chỉ có đúng 1 phiếu Fail, phiếu đó tự động đổi thành Success.',
+    trigger: 'Passive — tự kích hoạt khi trong nhóm Sprint',
+  },
+  'Data Analyst': {
+    name: 'Phân tích phiếu',
+    effect: '1 lần/game, từ Sprint 2. Chọn 1 người đã đi Sprint trước — biết họ vote Hoàn thành hay Cháy deadline.',
+    trigger: 'Dùng trong giờ tan ca hoặc Planning',
+  },
+  'Thực tập sinh': {
+    name: 'Theo sát nhân viên',
+    effect: 'Đầu game chọn 1 người để theo. Từ Sprint 2 trở đi, phiếu biểu quyết duyệt nhóm của người đó được nhân đôi.',
+    trigger: 'Chọn người ngay đêm đầu tiên, hiệu lực từ Sprint 2',
+  },
+
+  // === BAD ===
+  'Người trễ task': {
+    name: 'Phá hoại + Lật kèo',
+    effect: 'Vote Cháy deadline khi đi Sprint. Cuối game, nếu phe tốt thắng, được 1 lần chỉ điểm Scrum Master — đoán đúng → phe xấu thắng.',
+    trigger: 'Active trong Execution, đặc biệt Sprint 3 (double fail) khi muốn fail',
+  },
+  'Client': {
+    name: 'Nội gián BA',
+    effect: 'Biết danh tính Business Analyst ngay từ đầu game. Phối hợp tống khử hoặc đánh lạc hướng khi BA dùng skill kiểm tra.',
+    trigger: 'Passive — luôn biết BA',
+  },
+  'Ông sếp khó ưa': {
+    name: 'Cấm chat & vote',
+    effect: 'Mỗi Sprint chọn 1 người, người đó bị cấm chat & không được biểu quyết trong vòng Planning của Sprint đó.',
+    trigger: 'Dùng trong giờ tan ca trước Sprint',
+  },
+  'Kẻ fake CV': {
+    name: 'Lừa BA/SM',
+    effect: 'Nếu BA kiểm tra hoặc SM nhìn thấy vai trò, hệ thống trả kết quả "Scrum Team" (che giấu phe xấu).',
+    trigger: 'Passive — tự kích hoạt khi bị kiểm tra',
+  },
+  'QC cẩu thả': {
+    name: 'Nhân đôi Fail',
+    effect: 'Khi đi Sprint và vote Cháy deadline, phiếu của bạn được tính là 2 phiếu Fail. Ở Sprint 3 (double fail) chỉ cần vote 1 mình bạn là fail.',
+    trigger: 'Active trong Execution, đặc biệt Sprint 3',
+  },
+  'Deadline': {
+    name: 'Cấm chat toàn team',
+    effect: '1 lần/game. Cấm chat của TẤT CẢ thành viên trong vòng Planning của Sprint đó.',
+    trigger: 'Dùng trong giờ tan ca hoặc Planning đầu sprint',
+  },
+  'Technical Debt': {
+    name: '+1 nhân sự Sprint sau',
+    effect: 'Nếu bạn tham gia Sprint hiện tại, Sprint tiếp theo bắt buộc cộng thêm +1 nhân sự (tăng khả năng lọt phe xấu vào team).',
+    trigger: 'Passive — tự kích hoạt khi tham gia Sprint',
+  },
+};
+
 export type Phase =
   | 'lobby'
   | 'night'         // tan ca — skill window; team select locked
@@ -67,6 +149,7 @@ export type Phase =
   | 'teamVoting'    // majority vote
   | 'execution'     // sprint execution
   | 'sprintResult'  // result + post-sprint skill window
+  | 'betweenSprintDiscussion'  // bàn luận 90s giữa sprint, full player list + chat
   | 'discussion'    // lật kèo / final flip discussion
   | 'ended';
 
@@ -79,13 +162,14 @@ export type Vote = 'agree' | 'reject' | 'success' | 'fail';
 // ===== Per-phase cooldowns (from SYSTEM BEHAVIOR SPECIFICATION §1.1) =====
 export const TIMER_DEFAULTS = {
   roleRevealMs: 30_000,
-  nightFirstMs: 20_000,        // tan ca đầu tiên
-  nightRecurringMs: 60_000,    // tan ca giữa các sprint
+  nightFirstMs: 30_000,        // tan ca đầu tiên — 30s skill window
+  nightRecurringMs: 60_000,    // tan ca giữa các sprint — 60s
   planningMs: 180_000,         // vào ca — discussion timer
   poSelectTeamMs: 45_000,
   teamVoteMs: 30_000,
   executionVoteMs: 30_000,
   postSprintMs: 20_000,
+  discussionMs: 90_000,        // bàn luận 90s giữa sprint
   assassinationMs: 60_000,
 };
 
@@ -125,6 +209,7 @@ export interface Room {
   dataAnalystCheckUsed: boolean;
   businessAnalystCheckUsed: boolean;
   qcRedoUsed: boolean;
+  deadlineUsed: boolean;       // Deadline "Cấm chat toàn team" — 1 lần/game
 
   // Per-sprint flags — reset at start of each new sprint
   sepSilencedPlayerId: string | null;

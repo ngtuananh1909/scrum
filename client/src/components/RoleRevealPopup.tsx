@@ -3,7 +3,7 @@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useGameStore } from '@/store/gameStore';
-import { ROLE_DESCRIPTIONS, type PlayerRole } from '@/lib/types';
+import { ROLE_DESCRIPTIONS, ROLE_SKILLS, type PlayerRole } from '@/lib/types';
 
 function getAvatarUrl(name: string): string {
   const colors = ['c0c1ff', '4ae176', 'ffb4ab', '8083ff', 'ff5451'];
@@ -66,6 +66,31 @@ export function RoleRevealPopup() {
           <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
             {myRole && ROLE_DESCRIPTIONS[myRole as PlayerRole]}
           </p>
+
+          {/* Skill section — separate from flavor text */}
+          {myRole && ROLE_SKILLS[myRole as PlayerRole] && (
+            <div className="w-full max-w-xs glass-panel rounded-xl p-4 border border-primary/30 bg-primary/5 space-y-2">
+              <div className="flex items-center gap-2 justify-center">
+                <span className="material-symbols-outlined text-base text-primary">
+                  auto_awesome
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-primary">
+                  Kỹ năng
+                </span>
+              </div>
+              <p className="text-sm font-bold text-foreground text-center">
+                {ROLE_SKILLS[myRole as PlayerRole].name}
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed text-center">
+                {ROLE_SKILLS[myRole as PlayerRole].effect}
+              </p>
+              {ROLE_SKILLS[myRole as PlayerRole].trigger && (
+                <p className="text-[10px] font-mono text-primary/80 italic text-center pt-1 border-t border-primary/20">
+                  ⏱ {ROLE_SKILLS[myRole as PlayerRole].trigger}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Confirm button */}
           <Button

@@ -25,6 +25,7 @@ const PHASE_LABELS: Record<string, string> = {
   teamVoting: 'Biểu quyết duyệt nhóm',
   execution: 'Thực thi Sprint',
   sprintResult: 'Kết quả Sprint',
+  betweenSprintDiscussion: 'Bàn luận giữa Sprint',
   discussion: 'Thảo luận lật kèo',
   ended: 'Game Over',
 };
@@ -63,6 +64,7 @@ export default function GamePage() {
     voteTeam,
     voteExecution,
     advanceToPlanning,
+    advanceFromDiscussion,
     saboteurGuess,
     startGame,
     subscribeToRoom,
@@ -734,7 +736,81 @@ export default function GamePage() {
           )}
           <Button onClick={advanceToPlanning} className="mt-4 px-6 py-3">
             <span className="material-symbols-outlined mr-2">arrow_forward</span>
-            Tiếp tục (tan ca kế tiếp)
+            Tiếp tục (bàn luận 90s)
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── Between-Sprint Discussion Phase (90s) ───
+  const renderBetweenSprintDiscussion = () => {
+    const secs = Math.ceil(phaseRemainingMs / 1000);
+    const mm = Math.floor(secs / 60);
+    const ss = secs % 60;
+    return (
+      <div className="space-y-6">
+        <div className="glass-panel rounded-xl p-5 sm:p-6 text-center">
+          <span
+            className="material-symbols-outlined text-3xl text-primary mb-2 block"
+            style={{ fontVariationSettings: 'FILL 1' }}
+          >
+            forum
+          </span>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
+            Bàn luận giữa Sprint
+          </h2>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            90 giây thảo luận trước khi vào giờ tan ca. Mở chat ở góc phải để trò chuyện.
+          </p>
+          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high">
+            <span className="material-symbols-outlined text-base text-muted-foreground">
+              timer
+            </span>
+            <span className="font-mono font-bold text-sm">
+              {mm}:{ss.toString().padStart(2, '0')}
+            </span>
+            <span className="text-[10px] font-mono text-muted-foreground">còn lại</span>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-mono uppercase tracking-widest text-muted-foreground mb-3">
+            Dev Team ({players.length})
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {players.map((p) => (
+              <div
+                key={p.id}
+                className={`glass-panel rounded-xl p-3 flex flex-col items-center gap-2 text-center border ${
+                  !p.isAlive ? 'border-outline opacity-50' : 'border-outline'
+                }`}
+              >
+                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-surface bg-surface-container">
+                  <img
+                    src={getAvatarUrl(p.name)}
+                    alt={p.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold truncate w-full">
+                    {p.name}
+                    {p.id === playerId && ' (Bạn)'}
+                  </p>
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    {p.isAlive ? 'Đang chơi' : 'Đã chết'}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="text-center">
+          <Button onClick={advanceFromDiscussion} className="px-6 py-3">
+            <span className="material-symbols-outlined mr-2">wb_twilight</span>
+            Vào giờ tan ca (dùng skill)
           </Button>
         </div>
       </div>
@@ -1188,6 +1264,8 @@ export default function GamePage() {
                     ? 'Bỏ phiếu kín — 30s'
                     : phase === 'sprintResult'
                     ? 'Sprint kết thúc — kỹ năng QC/DA (20s)'
+                    : phase === 'betweenSprintDiscussion'
+                    ? 'Bàn luận giữa Sprint — 90s'
                     : phase === 'discussion'
                     ? 'Thảo luận lật kèo'
                     : PHASE_LABELS[phase] ?? phase
@@ -1203,6 +1281,7 @@ export default function GamePage() {
             {phase === 'teamVoting' && renderTeamVoting()}
             {phase === 'execution' && renderExecution()}
             {phase === 'sprintResult' && renderSprintResult()}
+            {phase === 'betweenSprintDiscussion' && renderBetweenSprintDiscussion()}
             {phase === 'discussion' && renderDiscussion()}
             {phase === 'ended' && renderEnded()}
             {phase === 'night' && (

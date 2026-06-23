@@ -108,6 +108,7 @@ interface GameStore extends RoomState {
   voteTeam: (vote: 'agree' | 'reject') => Promise<void>;
   voteExecution: (vote: 'success' | 'fail') => Promise<void>;
   advanceToPlanning: () => Promise<void>;
+  advanceFromDiscussion: () => Promise<void>;
   saboteurGuess: (guessedSmId: string) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
 
@@ -544,6 +545,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().setRoomFromResponse(data);
     } catch (error) {
       console.error('[advanceToPlanning]', error);
+    }
+  },
+
+  advanceFromDiscussion: async () => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/advance-discussion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      console.error('[advanceFromDiscussion]', error);
     }
   },
 
