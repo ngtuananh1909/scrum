@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function Lobby() {
   const router = useRouter();
@@ -24,7 +23,6 @@ export default function Lobby() {
     ensurePlayerId,
   } = useGameStore();
 
-  // Generate / restore persistent player identity on mount.
   useEffect(() => {
     ensurePlayerId();
   }, [ensurePlayerId]);
@@ -55,73 +53,126 @@ export default function Lobby() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold text-slate-900 dark:text-slate-100">
-            Say Agile One More Time
-          </CardTitle>
-          <p className="text-slate-500 mt-2">A real-time multiplayer social deduction game</p>
-        </CardHeader>
-        <CardContent className="space-y-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      {/* Background radial gradients */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_50%,rgba(99,102,241,0.08),transparent_40%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_30%,rgba(74,225,118,0.05),transparent_40%)]" />
+      </div>
+
+      {/* Main card */}
+      <div className="relative w-full max-w-md">
+        <div className="glass-panel rounded-xl p-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold tracking-tight text-primary mb-1" style={{ fontFamily: 'var(--font-sans)' }}>
+              AGILE WEREWOLF
+            </h1>
+            <p className="text-sm text-muted-foreground font-mono">
+              Real-time social deduction
+            </p>
+          </div>
+
+          {/* Error */}
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-              <p>{error}</p>
-              <button onClick={clearError} className="text-sm underline mt-1">Dismiss</button>
+            <div className="mb-6 p-3 rounded-lg bg-error-container border border-error/30 text-error text-sm flex items-center justify-between">
+              <span>{error}</span>
+              <button onClick={clearError} className="text-error hover:text-error/80 ml-2">
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
             </div>
           )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Your Name</label>
-            <Input
-              placeholder="Enter your name"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              maxLength={20}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Room Code</label>
-            <div className="flex gap-2">
+          {/* Form */}
+          <div className="space-y-5">
+            {/* Player name */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+                Your Name
+              </label>
               <Input
-                placeholder="Enter room code"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                maxLength={6}
-                className="font-mono text-lg tracking-wider"
+                placeholder="Enter your name"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                maxLength={20}
+                className="h-11 font-sans"
               />
-              <Button variant="outline" onClick={generateRoomId}>
-                Generate
+            </div>
+
+            {/* Room code */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+                Room Code
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter room code"
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                  maxLength={20}
+                  className="h-11 font-mono text-base tracking-widest"
+                />
+                <Button
+                  variant="outline"
+                  onClick={generateRoomId}
+                  className="h-11 px-4 shrink-0"
+                >
+                  <span className="material-symbols-outlined text-xl">autorenew</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-3 pt-2">
+              <Button
+                className="flex-1 h-12 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold tracking-wide"
+                onClick={handleCreate}
+                disabled={!roomId.trim() || !playerName.trim() || isCreating}
+              >
+                {isCreating ? (
+                  <>
+                    <span className="material-symbols-outlined text-xl mr-2 animate-spin">progress_activity</span>
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-xl mr-2">add</span>
+                    Create Room
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 h-12 font-semibold tracking-wide border-primary/40 text-primary hover:bg-primary/10"
+                onClick={handleJoin}
+                disabled={!roomId.trim() || !playerName.trim() || isJoining}
+              >
+                {isJoining ? (
+                  <>
+                    <span className="material-symbols-outlined text-xl mr-2 animate-spin">progress_activity</span>
+                    Joining...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-xl mr-2">login</span>
+                    Join
+                  </>
+                )}
               </Button>
             </div>
           </div>
 
-          <div className="flex gap-4">
-            <Button
-              className="flex-1"
-              onClick={handleCreate}
-              disabled={!roomId.trim() || !playerName.trim() || isCreating}
-            >
-              {isCreating ? 'Creating...' : 'Create Room'}
-            </Button>
-            <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={handleJoin}
-              disabled={!roomId.trim() || !playerName.trim() || isJoining}
-            >
-              {isJoining ? 'Joining...' : 'Join Room'}
-            </Button>
+          {/* Rules hint */}
+          <div className="mt-8 pt-6 border-t border-border text-center space-y-1">
+            <p className="text-xs text-muted-foreground font-mono">
+              5–10 players · Good vs Bad
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Good: complete 3 sprints · Bad: fail 3 sprints or 4 delays
+            </p>
           </div>
-
-          <div className="text-center text-sm text-slate-500">
-            <p>5-10 players required</p>
-            <p className="mt-1">Good guys win by completing 3 sprints</p>
-            <p>Bad guys win by failing 3 sprints or delaying 4 times</p>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

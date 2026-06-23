@@ -228,6 +228,7 @@ async function tallyTeamVote(room: Room): Promise<Room> {
     });
 
     if (room.qcBugged) {
+      // QC cẩu thả bug: next sprint auto-fails at execution tally
       room.phase = 'sprintResult';
       room.badWins++;
       room.qcBugged = false;
@@ -237,7 +238,10 @@ async function tallyTeamVote(room: Room): Promise<Room> {
     }
   } else {
     room.consecutiveDelays++;
-    room.currentPO = (room.currentPO + 1) % room.players.length;
+    // Rotate PO to next alive player
+    do {
+      room.currentPO = (room.currentPO + 1) % room.players.length;
+    } while (!room.players[room.currentPO]?.isAlive);
 
     if (room.consecutiveDelays >= 4) {
       room.phase = 'ended';
@@ -316,22 +320,22 @@ async function tallyExecutionVote(room: Room): Promise<Room> {
 }
 
 function checkWinCondition(room: Room): void {
-  if (room.badWins >= 3) {
+  if (room.badWins >= 2) {
     room.phase = 'ended';
     return;
   }
 
-  if (room.goodWins >= 3) {
+  if (room.goodWins >= 2) {
     room.phase = 'ended';
     return;
   }
 
-  if (room.currentSprint >= 5) {
+  if (room.currentSprint >= 4) {
     room.phase = 'ended';
     return;
   }
 
-  // Next sprint
+  // Next sprint — reset per-sprint state
   room.phase = 'planning';
   room.proposedTeam = [];
   room.votes = {};
@@ -346,6 +350,9 @@ export async function saboteurGuess(
 ): Promise<{ winner: string; correct: boolean } | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
+
+  // Saboteur can only guess after at least 1 good win
+  if (room.goodWins < 1) return null;
 
   const saboteur = room.players.find((p) => p.id === playerId && p.role === 'Người trễ task');
   if (!saboteur) return null;
