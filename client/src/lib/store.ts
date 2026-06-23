@@ -7,7 +7,7 @@ import { assignRoles, getSprintSize, requiresDoubleFail, isGoodRole, ROLES } fro
 // One UPSERT per action — atomic, single round-trip. Realtime fans out row changes to subscribers.
 
 async function readRoom(id: string): Promise<Room | null> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin()
     .from('rooms')
     .select('state')
     .eq('id', id)
@@ -18,7 +18,7 @@ async function readRoom(id: string): Promise<Room | null> {
 }
 
 async function writeRoom(room: Room): Promise<void> {
-  const { error } = await supabaseAdmin.from('rooms').upsert({
+  const { error } = await supabaseAdmin().from('rooms').upsert({
     id: room.id,
     state: room,
     last_updated: new Date().toISOString(),

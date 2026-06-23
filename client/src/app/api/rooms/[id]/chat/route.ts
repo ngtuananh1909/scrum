@@ -11,7 +11,7 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin()
       .from('messages')
       .select('*')
       .eq('room_id', id)
@@ -52,7 +52,7 @@ export async function POST(
     }
 
     // Confirm room exists so we don't accept chat into the void.
-    const { data: room } = await supabaseAdmin
+    const { data: room } = await supabaseAdmin()
       .from('rooms')
       .select('id')
       .eq('id', id)
@@ -62,7 +62,7 @@ export async function POST(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin()
       .from('messages')
       .insert({
         room_id: id,
