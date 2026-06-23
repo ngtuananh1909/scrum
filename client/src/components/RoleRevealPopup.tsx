@@ -3,7 +3,7 @@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useGameStore } from '@/store/gameStore';
-import { ROLE_DESCRIPTIONS } from '@/lib/types';
+import { ROLE_DESCRIPTIONS, type PlayerRole } from '@/lib/types';
 
 function getAvatarUrl(name: string): string {
   const colors = ['c0c1ff', '4ae176', 'ffb4ab', '8083ff', 'ff5451'];
@@ -64,7 +64,7 @@ export function RoleRevealPopup() {
 
           {/* Role description hint */}
           <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-            {myRole && ROLE_DESCRIPTIONS[myRole]}
+            {myRole && ROLE_DESCRIPTIONS[myRole as PlayerRole]}
           </p>
 
           {/* Confirm button */}
