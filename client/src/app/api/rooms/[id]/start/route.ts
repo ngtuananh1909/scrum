@@ -7,13 +7,13 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { playerId } = await request.json();
+    const { playerId, roles } = await request.json();
 
     if (!playerId) {
       return NextResponse.json({ error: 'Missing playerId' }, { status: 400 });
     }
 
-    const result = await startGame(id, playerId);
+    const result = await startGame(id, playerId, roles);
 
     if (!result) {
       return NextResponse.json({ error: 'Cannot start game' }, { status: 400 });

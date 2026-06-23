@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase';
 import type { Room, Player, GameAction, Phase, Vote } from './types';
-import { assignRoles, getSprintSize, requiresDoubleFail, isGoodRole, ROLES } from './types';
+import { assignRoles, assignSelectedRoles, getSprintSize, requiresDoubleFail, isGoodRole, ROLES } from './types';
 
 // ===== Supabase-backed room storage =====
 // Each game is one row in public.rooms. State is a JSONB blob matching the Room interface.
@@ -107,13 +107,14 @@ export async function joinRoom(
 
 export async function startGame(
   roomId: string,
-  playerId: string
+  playerId: string,
+  roles?: string[]
 ): Promise<{ room: Room; role: string; isGood: boolean; saboteurIds: string[]; smId: string | null } | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
   if (room.players.length < 5) return null;
 
-  room.players = assignRoles(room.players);
+  room.players = roles ? assignSelectedRoles(room.players, roles) : assignRoles(room.players);
   room.phase = 'planning';
   await writeRoom(room);
 

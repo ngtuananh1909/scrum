@@ -15,6 +15,17 @@ export const ROLES = {
   BAD: ['Người trễ task', 'QC cẩu thả']
 };
 
+export const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
+  'Scrum Master': 'Người dẫn dắt team. Nếu người chơi Người trễ task đoán đúng bạn, họ thắng.',
+  'Project Manager': 'Quản lý dự án. Mục tiêu: hoàn thành 3 sprints để team tốt thắng.',
+  'Developer': 'Phát triển sản phẩm. Team của bạn cần vote SUCCESS để thắng sprint.',
+  'Business Analyst': 'Phân tích nghiệp vụ. Tìm và loại bỏ kẻ phá hoại.',
+  'Tech Lead': 'Ngăn 1 fail của team trong execution phase (không phải trong teamVoting).',
+  'Data Analyst': 'Phân tích dữ liệu. Hỗ trợ team đưa ra quyết định chính xác.',
+  'Người trễ task': 'Phá team. Fail sprints để thắng. Hoặc đoán đúng Scrum Master sau khi team tốt thắng 1 sprint.',
+  'QC cẩu thả': 'Bug sprint tiếp theo nếu team bạn thắng sprint hiện tại.',
+};
+
 export type Phase = 'lobby' | 'planning' | 'teamVoting' | 'execution' | 'sprintResult' | 'ended';
 export type Vote = 'agree' | 'reject' | 'success' | 'fail';
 export type PlayerRole = typeof ROLES.GOOD[number] | typeof ROLES.BAD[number];
@@ -102,5 +113,13 @@ export function assignRoles(players: Player[]): Player[] {
   return players.map((player, index) => ({
     ...player,
     role: shuffledRoles[index] as PlayerRole
+  }));
+}
+
+export function assignSelectedRoles(players: Player[], selectedRoles: string[]): Player[] {
+  const shuffledPlayers = shuffleArray(players);
+  return shuffledPlayers.map((player, index) => ({
+    ...player,
+    role: selectedRoles[index] as PlayerRole
   }));
 }

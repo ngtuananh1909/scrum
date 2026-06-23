@@ -29,6 +29,8 @@ interface RoomState {
   error: string | null;
   realtimeChannel: ReturnType<ReturnType<typeof getSupabase>['channel']> | null;
   pollingInterval: ReturnType<typeof setInterval> | null;
+  showRoleReveal: boolean;
+  gameStarted: boolean; // set once when game starts, persists across reconnections
 }
 
 interface GameStore extends RoomState {
@@ -36,7 +38,7 @@ interface GameStore extends RoomState {
   createRoom: (roomId: string, playerName: string) => Promise<void>;
   joinRoom: (roomId: string, playerName: string) => Promise<void>;
   rejoinRoom: (roomId: string) => Promise<void>;
-  startGame: () => Promise<void>;
+  startGame: (roles?: string[]) => Promise<void>;
   proposeTeam: (playerIds: string[]) => Promise<void>;
   voteTeam: (vote: 'agree' | 'reject') => Promise<void>;
   voteExecution: (vote: 'success' | 'fail') => Promise<void>;
@@ -47,6 +49,8 @@ interface GameStore extends RoomState {
   startPollingFallback: () => void;
   stopPollingFallback: () => void;
   clearError: () => void;
+  closeRoleReveal: () => void;
+  resetRoleReveal: () => Promise<void>;
   setRoomFromResponse: (data: {
     room: Room;
     playerId?: string;
@@ -79,6 +83,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   error: null,
   realtimeChannel: null,
   pollingInterval: null,
+  showRoleReveal: false,
+  gameStarted: false,
 
   ensurePlayerId: () => {
     let id = get().playerId;
@@ -91,6 +97,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setRoomFromResponse: (data) => {
     const { room, playerId, role, isGood, saboteurIds, smId } = data;
+    // Look up own role from room.players if not provided in response (non-host players)
+    const myPlayerId = playerId || get().playerId;
+    const ownPlayer = myPlayerId ? (room.players || []).find(p => p.id === myPlayerId) : null;
+    const resolvedRole = role || ownPlayer?.role || null;
+    const resolvedIsGood = isGood !== undefined ? isGood : (resolvedRole ? !['Người trễ task', 'QC cẩu thả'].includes(resolvedRole) : undefined);
+    const wasNotStarted = !get().gameStarted;
+    const isPlanning = room.phase === 'planning';
+    const hasRole = !!resolvedRole;
     set({
       players: room.players || [],
       phase: room.phase || null,
@@ -106,10 +120,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       techLeadPresent: room.techLeadPresent ?? false,
       qcBugged: room.qcBugged ?? false,
       ...(playerId ? { playerId } : {}),
-      ...(role ? { myRole: role } : {}),
-      ...(isGood !== undefined ? { isGood } : {}),
+      ...(resolvedRole ? { myRole: resolvedRole } : {}),
+      ...(resolvedIsGood !== undefined ? { isGood: resolvedIsGood } : {}),
       ...(saboteurIds ? { saboteurIds } : {}),
       ...(smId ? { smId } : {}),
+      ...(wasNotStarted && isPlanning && hasRole && !get().showRoleReveal ? { showRoleReveal: true, gameStarted: true } : {}),
     });
   },
 
@@ -127,8 +142,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return;
       }
       const data = await res.json();
-      set({ roomId: data.roomId, playerId: data.playerId, playerName });
-      get().setRoomFromResponse(data);
+      set({ roomId: data.roomId, playerId: data.playerId, playerName, gameStarted: false, showRoleReveal: false });
+	      get().setRoomFromResponse(data);
       get().subscribeToRoom();
     } catch (error) {
       console.error('[createRoom]', error);
@@ -150,7 +165,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return;
       }
       const data = await res.json();
-      set({ roomId, playerId: data.player.id, playerName });
+      set({ roomId, playerId: data.player.id, playerName, gameStarted: false, showRoleReveal: false });
       get().setRoomFromResponse(data);
       get().subscribeToRoom();
     } catch (error) {
@@ -176,7 +191,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         return;
       }
       const data = await res.json();
-      set({ roomId, playerId: data.player.id, playerName });
+      set({ roomId, playerId: data.player.id, playerName, gameStarted: false, showRoleReveal: false });
       get().setRoomFromResponse(data);
       get().subscribeToRoom();
     } catch (error) {
@@ -185,14 +200,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  startGame: async () => {
+  startGame: async (roles?: string[]) => {
     const { roomId, playerId } = get();
     if (!roomId || !playerId) return;
     try {
       const res = await fetch(`${API_URL}/api/rooms/${roomId}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId }),
+        body: JSON.stringify({ playerId, roles }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -408,4 +423,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  closeRoleReveal: () => {
+    set({ showRoleReveal: false });
+    get().resetRoleReveal();
+  },
+
+  resetRoleReveal: async () => {
+    const { roomId } = get();
+    if (!roomId) return;
+    try {
+      await fetch(`${API_URL}/api/rooms/${roomId}/reset-role-reveal`, { method: 'POST' });
+    } catch (_e) {
+      // non-critical, ignore
+    }
+  },
 }));

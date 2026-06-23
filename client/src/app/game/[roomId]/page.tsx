@@ -6,7 +6,9 @@ import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChatPanel } from '@/components/ChatPanel';
-import { getSprintSize } from '@/lib/types';
+import { RoleRevealPopup } from '@/components/RoleRevealPopup';
+import { getSprintSize, ROLES, ROLE_DESCRIPTIONS } from '@/lib/types';
+import { getAvatarUrl } from '@/lib/utils';
 
 const SPRINT_NAMES = ['Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 4'];
 
@@ -18,12 +20,6 @@ const PHASE_LABELS: Record<string, string> = {
   sprintResult: 'Sprint Result',
   ended: 'Game Over',
 };
-
-function getAvatarUrl(name: string): string {
-  const colors = ['c0c1ff', '4ae176', 'ffb4ab', '8083ff', 'ff5451'];
-  const color = colors[name.charCodeAt(0) % colors.length];
-  return `https://api.dicebear.com/7.x/avataaars-neutral/svg?seed=${encodeURIComponent(name)}&backgroundColor=${color}`;
-}
 
 export default function GamePage() {
   const params = useParams();
@@ -55,11 +51,13 @@ export default function GamePage() {
     playerName,
     messages,
     sendMessage,
+    showRoleReveal,
   } = useGameStore();
 
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [chatTab, setChatTab] = useState<'chat' | 'logs'>('chat');
   const [chatDraft, setChatDraft] = useState('');
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,13 +131,21 @@ export default function GamePage() {
           </p>
         </div>
         {isPO && players.length >= 5 && (
-          <Button
-            onClick={() => startGame()}
-            className="bg-primary-container text-primary-foreground hover:bg-primary/80 px-8 py-4 rounded-lg font-semibold tracking-wide shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:shadow-[0_0_25px_rgba(99,102,241,0.6)] border border-primary/50 shrink-0"
-          >
-            <span className="material-symbols-outlined mr-2">play_arrow</span>
-            START SPRINT 1
-          </Button>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {selectedRoles.length === players.length ? (
+              <Button
+                onClick={() => startGame(selectedRoles)}
+                className="bg-primary-container text-primary-foreground hover:bg-primary/80 px-8 py-4 rounded-lg font-semibold tracking-wide shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:shadow-[0_0_25px_rgba(99,102,241,0.6)] border border-primary/50"
+              >
+                <span className="material-symbols-outlined mr-2">play_arrow</span>
+                START SPRINT 1
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground font-mono">
+                {selectedRoles.length}/{players.length} roles selected
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -174,6 +180,46 @@ export default function GamePage() {
           ))}
         </div>
       </div>
+
+      {/* Role selection for PO */}
+      {isPO && players.length >= 5 && (
+        <div className="glass-panel rounded-xl p-6">
+          <h3 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground mb-4">
+            Select Roles for This Game
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {[...ROLES.GOOD, ...ROLES.BAD].map((role) => {
+              const isSelected = selectedRoles.includes(role);
+              const isGood = ROLES.GOOD.includes(role);
+              return (
+                <button
+                  key={role}
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedRoles(selectedRoles.filter(r => r !== role));
+                    } else if (selectedRoles.length < players.length) {
+                      setSelectedRoles([...selectedRoles, role]);
+                    }
+                  }}
+                  disabled={!isSelected && selectedRoles.length >= players.length}
+                  className={`px-3 py-2 rounded-lg text-sm font-mono transition-all border ${
+                    isSelected
+                      ? isGood
+                        ? 'bg-secondary/20 border-secondary text-secondary'
+                        : 'bg-error/20 border-error text-error'
+                      : 'bg-surface-container-high border-outline hover:border-primary/50 text-muted-foreground'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  {role}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Select exactly {players.length} roles (60% good, 40% bad recommended)
+          </p>
+        </div>
+      )}
     </div>
   );
 
@@ -458,6 +504,9 @@ export default function GamePage() {
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* Role reveal popup */}
+      {showRoleReveal && <RoleRevealPopup />}
+
       {/* ─── TopNavBar ─── */}
       <nav className="h-16 shrink-0 bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant flex justify-between items-center px-6 z-50">
         <div className="flex items-center gap-4">
