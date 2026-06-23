@@ -62,14 +62,41 @@ export const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
 
 export type Phase =
   | 'lobby'
-  | 'nightZero'
-  | 'planning'
-  | 'teamVoting'
-  | 'execution'
-  | 'sprintResult'
+  | 'night'         // tan ca — skill window; team select locked
+  | 'planning'      // vào ca — discussion + PO chọn team
+  | 'teamVoting'    // majority vote
+  | 'execution'     // sprint execution
+  | 'sprintResult'  // result + post-sprint skill window
+  | 'discussion'    // lật kèo / final flip discussion
   | 'ended';
 
+// Legacy alias kept for in-flight Supabase rooms that may still reference the
+// old name. Treated identically to 'night' in the server logic.
+export type LegacyPhase = 'nightZero';
+
 export type Vote = 'agree' | 'reject' | 'success' | 'fail';
+
+// ===== Per-phase cooldowns (from SYSTEM BEHAVIOR SPECIFICATION §1.1) =====
+export const TIMER_DEFAULTS = {
+  roleRevealMs: 30_000,
+  nightFirstMs: 20_000,        // tan ca đầu tiên
+  nightRecurringMs: 60_000,    // tan ca giữa các sprint
+  planningMs: 180_000,         // vào ca — discussion timer
+  poSelectTeamMs: 45_000,
+  teamVoteMs: 30_000,
+  executionVoteMs: 30_000,
+  postSprintMs: 20_000,
+  assassinationMs: 60_000,
+};
+
+export interface SprintHistoryEntry {
+  sprintIndex: number;        // 1-based for UI
+  proposedTeam: string[];     // player ids
+  outcome: 'success' | 'fail';
+  votesAgree: Record<string, 'agree' | 'reject'>;
+  votesExecution: Record<string, 'success' | 'fail'>;
+  timestamp: number;
+}
 
 export interface Player {
   id: string;
@@ -112,6 +139,15 @@ export interface Room {
   prevSprintTeam: string[];
   prevExecutionVotes: Record<string, Vote>;
   prevSprintIndex: number; // sprint number that prev* refer to (-1 if none yet)
+
+  // ===== New phase-flow state =====
+  sprintHistory: SprintHistoryEntry[];
+  phaseStartedAt: number | null;   // ms epoch when current phase began
+  phaseDeadlineAt: number | null;  // ms epoch when current phase expires
+  pmDeferredThisSprint: boolean;   // PM explicitly deferred override this sprint
+  clientId: string | null;         // for BA to see Client identity
+  // Cooldown for the next-sprint PO selection — separate from main phase timer
+  poSelectDeadlineAt: number | null;
 
   // Legacy — kept as no-op for backward compat with in-flight rooms
   qcBugged?: boolean;

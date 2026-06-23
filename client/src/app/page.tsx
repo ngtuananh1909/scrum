@@ -1,17 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function Lobby() {
+  return (
+    <Suspense fallback={null}>
+      <LobbyInner />
+    </Suspense>
+  );
+}
+
+function LobbyInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [roomId, setRoomId] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [prefilledRoom, setPrefilledRoom] = useState(false);
 
   const {
     createRoom,
@@ -26,6 +36,15 @@ export default function Lobby() {
   useEffect(() => {
     ensurePlayerId();
   }, [ensurePlayerId]);
+
+  // Auto-fill room code from ?room= query param (shared-link landing).
+  useEffect(() => {
+    const r = searchParams.get('room');
+    if (r && !prefilledRoom) {
+      setRoomId(r.toUpperCase());
+      setPrefilledRoom(true);
+    }
+  }, [searchParams, prefilledRoom]);
 
   useEffect(() => {
     if (storeRoomId && players.length > 0) {

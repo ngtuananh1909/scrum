@@ -19,7 +19,10 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot vote' }, { status: 400 });
     }
 
-    return NextResponse.json({ room });
+    return NextResponse.json({
+      room,
+      ack: { vote, at: Date.now(), phase: 'teamVoting' },
+    });
   } catch (error) {
     console.error('[api/rooms/[id]/vote-team POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

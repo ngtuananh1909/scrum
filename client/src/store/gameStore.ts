@@ -1,7 +1,15 @@
 'use client';
 
 import { create } from 'zustand';
-import type { Player, Phase, ChatMessage, Room, RoleConfig, PlayerRole } from '@/lib/types';
+import type {
+  Player,
+  Phase,
+  ChatMessage,
+  Room,
+  RoleConfig,
+  PlayerRole,
+  SprintHistoryEntry,
+} from '@/lib/types';
 import {
   getOrCreatePlayerId,
   getPersistedPlayerName,
@@ -19,6 +27,12 @@ export interface PrivateSkillResults {
   daCheck: { result: 'success' | 'fail'; targetId: string } | null;
 }
 
+export interface VoteAck {
+  phase: 'teamVoting' | 'execution';
+  vote: 'agree' | 'reject' | 'success' | 'fail';
+  at: number;
+}
+
 interface RoomState {
   roomId: string | null;
   playerId: string | null;
@@ -33,6 +47,7 @@ interface RoomState {
   saboteurIds: string[];
   smId: string | null;
   baId: string | null;
+  clientId: string | null;
   goodWins: number;
   badWins: number;
   consecutiveDelays: number;
@@ -47,9 +62,17 @@ interface RoomState {
   deadlineSilenced: boolean;
   ttsFollowTargetId: string | null;
   techDebtActive: boolean;
+  pmDeferredThisSprint: boolean;
   prevSprintTeam: string[];
   prevExecutionVotes: Record<string, 'success' | 'fail' | 'agree' | 'reject'>;
   prevSprintIndex: number;
+
+  // New phase-flow state
+  sprintHistory: SprintHistoryEntry[];
+  phaseStartedAt: number | null;
+  phaseDeadlineAt: number | null;
+  poSelectDeadlineAt: number | null;
+  phaseRemainingMs: number;
 
   // Derived
   isSilenced: boolean;
@@ -60,10 +83,14 @@ interface RoomState {
   // Ephemeral private skill results (never sync'd)
   privateSkillResults: PrivateSkillResults;
 
+  // Vote feedback (ephemeral)
+  voteAck: VoteAck | null;
+
   messages: ChatMessage[];
   error: string | null;
   realtimeChannel: ReturnType<ReturnType<typeof getSupabase>['channel']> | null;
   pollingInterval: ReturnType<typeof setInterval> | null;
+  tickInterval: ReturnType<typeof setInterval> | null;
   showRoleReveal: boolean;
   gameStarted: boolean;
   nightZeroSeen: boolean;
@@ -85,16 +112,24 @@ interface GameStore extends RoomState {
 
   // Skill actions
   nightZeroComplete: (ttsTargetId: string | null) => Promise<void>;
+  nightAdvance: () => Promise<void>;
   pmOverride: (playerIds: string[]) => Promise<void>;
+  pmDefer: () => Promise<void>;
   businessAnalystCheck: (targetIds: [string, string]) => Promise<'Yes' | 'No' | null>;
   qcRedo: () => Promise<void>;
   dataAnalystCheck: (targetId: string) => Promise<'success' | 'fail' | null>;
   sepSilence: (targetId: string) => Promise<void>;
   deadlineSilence: () => Promise<void>;
 
+  // Auto-advance (called by tick interval)
+  autoAdvance: () => Promise<void>;
+  startTickInterval: () => void;
+  stopTickInterval: () => void;
+
   // UI / cache
   setRoleConfig: (cfg: RoleConfig) => void;
   setNightZeroSeen: (v: boolean) => void;
+  setVoteAck: (ack: VoteAck | null) => void;
   clearPrivateBaResult: () => void;
   clearPrivateDaResult: () => void;
 
@@ -113,6 +148,7 @@ interface GameStore extends RoomState {
     saboteurIds?: string[];
     smId?: string | null;
     baId?: string | null;
+    clientId?: string | null;
   }) => void;
 }
 
@@ -134,6 +170,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   saboteurIds: [],
   smId: null,
   baId: null,
+  clientId: null,
   goodWins: 0,
   badWins: 0,
   consecutiveDelays: 0,
@@ -147,18 +184,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deadlineSilenced: false,
   ttsFollowTargetId: null,
   techDebtActive: false,
+  pmDeferredThisSprint: false,
   prevSprintTeam: [],
   prevExecutionVotes: {},
   prevSprintIndex: -1,
 
+  sprintHistory: [],
+  phaseStartedAt: null,
+  phaseDeadlineAt: null,
+  poSelectDeadlineAt: null,
+  phaseRemainingMs: 0,
+
   isSilenced: false,
   roleConfig: initialRoleConfig,
   privateSkillResults: { ...initialPrivate },
+  voteAck: null,
 
   messages: [],
   error: null,
   realtimeChannel: null,
   pollingInterval: null,
+  tickInterval: null,
   showRoleReveal: false,
   gameStarted: false,
   nightZeroSeen: false,
@@ -184,14 +230,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       saboteurIds: cached.saboteurIds,
       smId: cached.smId,
       baId: cached.baId,
-      gameStarted: cached.room.phase !== 'lobby' && cached.room.phase !== 'nightZero',
-      nightZeroSeen: cached.room.phase !== 'nightZero',
+      gameStarted: cached.room.phase !== 'lobby' && cached.room.phase !== 'night',
+      nightZeroSeen: cached.room.phase !== 'night',
     });
     get().setRoomFromResponse({ room: cached.room });
   },
 
   setRoomFromResponse: (data) => {
-    const { room, playerId, role, isGood, saboteurIds, smId, baId } = data;
+    const { room, playerId, role, isGood, saboteurIds, smId, baId, clientId } = data;
     const myPlayerId = playerId || get().playerId;
     const ownPlayer = myPlayerId ? (room.players || []).find((p) => p.id === myPlayerId) : null;
     const resolvedRole = role || ownPlayer?.role || get().myRole || null;
@@ -210,9 +256,25 @@ export const useGameStore = create<GameStore>((set, get) => ({
       Boolean(room.deadlineSilenced) ||
       (currentPlayerId !== null && room.sepSilencedPlayerId === currentPlayerId);
 
+    // Clear vote ack when phase changes away from voting.
+    const previousPhase = get().phase;
+    const newPhase = room.phase || null;
+    let voteAck = get().voteAck;
+    if (
+      voteAck &&
+      ((voteAck.phase === 'teamVoting' && newPhase !== 'teamVoting') ||
+        (voteAck.phase === 'execution' && newPhase !== 'execution'))
+    ) {
+      voteAck = null;
+    }
+
+    // Clear nightZeroSeen when entering a new night (so overlay shows again).
+    let nightZeroSeen = get().nightZeroSeen;
+    if (newPhase !== 'night') nightZeroSeen = true;
+
     set({
       players: room.players || [],
-      phase: room.phase || null,
+      phase: newPhase,
       currentSprint: room.currentSprint ?? 0,
       proposedTeam: room.proposedTeam || [],
       currentPO:
@@ -232,11 +294,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       deadlineSilenced: room.deadlineSilenced ?? false,
       ttsFollowTargetId: room.ttsFollowTargetId ?? null,
       techDebtActive: room.techDebtActive ?? false,
+      pmDeferredThisSprint: room.pmDeferredThisSprint ?? false,
       prevSprintTeam: room.prevSprintTeam ?? [],
       prevExecutionVotes: (room.prevExecutionVotes ?? {}) as Record<string, 'success' | 'fail'>,
       prevSprintIndex: room.prevSprintIndex ?? -1,
 
+      sprintHistory: room.sprintHistory ?? [],
+      phaseStartedAt: room.phaseStartedAt ?? null,
+      phaseDeadlineAt: room.phaseDeadlineAt ?? null,
+      poSelectDeadlineAt: room.poSelectDeadlineAt ?? null,
+
       isSilenced: derivedSilenced,
+      voteAck,
+      nightZeroSeen,
 
       ...(playerId ? { playerId } : {}),
       ...(resolvedRole ? { myRole: resolvedRole } : {}),
@@ -244,7 +314,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ...(saboteurIds ? { saboteurIds } : {}),
       ...(smId !== undefined ? { smId } : {}),
       ...(baId !== undefined ? { baId } : {}),
-      ...(wasNotStarted && isPostLobby && hasRole && !get().showRoleReveal && !get().nightZeroSeen
+      ...(clientId !== undefined ? { clientId } : {}),
+      ...(wasNotStarted && isPostLobby && hasRole && !get().showRoleReveal && previousPhase === null
         ? { showRoleReveal: true, gameStarted: true }
         : {}),
     });
@@ -412,6 +483,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   voteTeam: async (vote) => {
     const { roomId, playerId } = get();
     if (!roomId || !playerId) return;
+    // Optimistic vote feedback so the UI shows "Đã chọn" immediately.
+    set({ voteAck: { phase: 'teamVoting', vote, at: Date.now() } });
     try {
       const res = await fetch(`${API_URL}/api/rooms/${roomId}/vote-team`, {
         method: 'POST',
@@ -434,6 +507,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   voteExecution: async (vote) => {
     const { roomId, playerId } = get();
     if (!roomId || !playerId) return;
+    set({ voteAck: { phase: 'execution', vote, at: Date.now() } });
     try {
       const res = await fetch(`${API_URL}/api/rooms/${roomId}/vote-execution`, {
         method: 'POST',
@@ -467,6 +541,57 @@ export const useGameStore = create<GameStore>((set, get) => ({
       get().setRoomFromResponse(data);
     } catch (error) {
       console.error('[advanceToPlanning]', error);
+    }
+  },
+
+  nightAdvance: async () => {
+    const { roomId, playerId } = get();
+    if (!roomId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/night-advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: playerId ?? '' }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      console.error('[nightAdvance]', error);
+    }
+  },
+
+  pmDefer: async () => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/skill-pm-defer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      console.error('[pmDefer]', error);
+    }
+  },
+
+  autoAdvance: async () => {
+    const { roomId } = get();
+    if (!roomId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/auto-advance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      get().setRoomFromResponse(data);
+    } catch (error) {
+      console.error('[autoAdvance]', error);
     }
   },
 
@@ -685,10 +810,48 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setRoleConfig: (cfg) => set({ roleConfig: cfg }),
   setNightZeroSeen: (v) => set({ nightZeroSeen: v }),
+  setVoteAck: (ack) => set({ voteAck: ack }),
   clearPrivateBaResult: () =>
     set({ privateSkillResults: { ...get().privateSkillResults, baCheck: null } }),
   clearPrivateDaResult: () =>
     set({ privateSkillResults: { ...get().privateSkillResults, daCheck: null } }),
+
+  // ===== Tick interval: countdown + auto-advance when phase deadline expires =====
+  startTickInterval: () => {
+    get().stopTickInterval();
+    const interval = setInterval(() => {
+      const { phaseDeadlineAt, phase, voteAck, autoAdvance } = get();
+      const now = Date.now();
+      const remaining = phaseDeadlineAt ? Math.max(0, phaseDeadlineAt - now) : 0;
+      // Only update if changed enough to avoid render churn (250ms granularity).
+      const prevRemaining = get().phaseRemainingMs;
+      if (Math.abs(prevRemaining - remaining) > 200 || (remaining === 0 && prevRemaining !== 0)) {
+        set({ phaseRemainingMs: remaining });
+      }
+      // Clear vote ack after 1500ms.
+      if (voteAck && now - voteAck.at > 1500) {
+        set({ voteAck: null });
+      }
+      // Auto-advance when timer hits 0 (and we haven't already advanced).
+      if (phaseDeadlineAt && now >= phaseDeadlineAt) {
+        if (['night', 'teamVoting', 'execution', 'sprintResult', 'discussion'].includes(phase ?? '')) {
+          // Fire and forget — server will push new state via realtime.
+          autoAdvance();
+        } else if (phase === 'planning' && get().poSelectDeadlineAt && now >= get().poSelectDeadlineAt!) {
+          autoAdvance();
+        }
+      }
+    }, 500);
+    set({ tickInterval: interval });
+  },
+
+  stopTickInterval: () => {
+    const { tickInterval } = get();
+    if (tickInterval) {
+      clearInterval(tickInterval);
+      set({ tickInterval: null });
+    }
+  },
 
   // Realtime subscription. Listens for rooms UPDATE and messages INSERT filtered by roomId.
   subscribeToRoom: () => {
@@ -742,6 +905,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
 
     set({ realtimeChannel: channel });
+    get().startTickInterval();
   },
 
   startPollingFallback: () => {
@@ -775,6 +939,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ realtimeChannel: null });
     }
     get().stopPollingFallback();
+    get().stopTickInterval();
   },
 
   clearError: () => set({ error: null }),

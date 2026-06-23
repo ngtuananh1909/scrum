@@ -7,21 +7,25 @@ import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RoleRevealPopup } from '@/components/RoleRevealPopup';
-import { NightZeroOverlay } from '@/components/NightZeroOverlay';
+import { NightOverlay } from '@/components/NightOverlay';
 import { SkillFab } from '@/components/SkillFab';
 import { SkillResultToast } from '@/components/SkillResultToast';
 import { RoleConfigCounter } from '@/components/RoleConfigCounter';
 import { MobileDrawer } from '@/components/MobileDrawer';
-import { getSprintSize, ROLE_DESCRIPTIONS, type PlayerRole } from '@/lib/types';
+import { TimerBar } from '@/components/TimerBar';
+import { VoteFeedback } from '@/components/VoteFeedback';
+import { SprintHistory } from '@/components/SprintHistory';
+import { getSprintSize, ROLE_DESCRIPTIONS, TIMER_DEFAULTS, type PlayerRole } from '@/lib/types';
 import { getAvatarUrl } from '@/lib/utils';
 
 const PHASE_LABELS: Record<string, string> = {
   lobby: 'Lobby',
-  nightZero: 'Night Zero',
-  planning: 'Sprint Planning',
-  teamVoting: 'Team Voting',
-  execution: 'Sprint Execution',
-  sprintResult: 'Sprint Result',
+  night: 'Giờ Tan Ca',
+  planning: 'Vào Ca (Planning)',
+  teamVoting: 'Biểu quyết duyệt nhóm',
+  execution: 'Thực thi Sprint',
+  sprintResult: 'Kết quả Sprint',
+  discussion: 'Thảo luận lật kèo',
   ended: 'Game Over',
 };
 
@@ -46,7 +50,14 @@ export default function GamePage() {
     sepSilencedPlayerId,
     isSilenced,
     pmOverrideUsed,
+    pmDeferredThisSprint,
     ttsFollowTargetId,
+    voteAck,
+    phaseStartedAt,
+    phaseDeadlineAt,
+    poSelectDeadlineAt,
+    phaseRemainingMs,
+    sprintHistory,
     proposeTeam,
     voteTeam,
     voteExecution,
@@ -58,6 +69,7 @@ export default function GamePage() {
     rejoinRoom,
     hydrateFromCache,
     ensurePlayerId,
+    setRoomFromResponse,
     playerId,
     roomId: storeRoomId,
     playerName,
@@ -71,7 +83,13 @@ export default function GamePage() {
   const [chatDraft, setChatDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const API_URL_FALLBACK = process.env.NEXT_PUBLIC_API_URL || '';
 
   // Mount: ensure UUID, hydrate from cache (instant render), then fire rejoin POST.
   useEffect(() => {
@@ -120,6 +138,59 @@ export default function GamePage() {
     if (!text || isSilenced) return;
     await sendMessage(text);
     setChatDraft('');
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
+    const shareData = {
+      title: 'Agile Werewolf',
+      text: `Vào phòng Scrum của tôi! Mã phòng: ${roomId}`,
+      url: shareUrl,
+    };
+    try {
+      if (typeof navigator !== 'undefined' && 'share' in navigator) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch {
+      // user cancelled — fall through to clipboard
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareToast('Đã copy link mời vào phòng!');
+    } catch {
+      setShareToast(shareUrl);
+    }
+    setTimeout(() => setShareToast(null), 2500);
+  };
+
+  const openRename = () => {
+    setRenameDraft(playerName || '');
+    setRenameOpen(true);
+  };
+
+  const handleRename = async () => {
+    const newName = renameDraft.trim();
+    if (!newName || !playerId) return;
+    setRenameBusy(true);
+    try {
+      const res = await fetch(`${API_URL_FALLBACK}/api/rooms/${roomId}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, newName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.room) {
+          setRoomFromResponse({ room: data.room });
+        }
+        setRenameOpen(false);
+      }
+    } catch (err) {
+      console.error('[rename]', err);
+    } finally {
+      setRenameBusy(false);
+    }
   };
 
   // ─── Sprint Progress Bar ───
@@ -390,18 +461,22 @@ export default function GamePage() {
             </p>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground mb-4">Bỏ phiếu của bạn:</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                Bỏ phiếu của bạn: (timeout 30s → auto Đồng ý)
+              </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button
                   onClick={() => voteTeam('agree')}
-                  className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)]"
+                  disabled={voteAck?.phase === 'teamVoting'}
+                  className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)] disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined mr-2">thumb_up</span>
                   ĐỒNG Ý
                 </Button>
                 <Button
                   onClick={() => voteTeam('reject')}
-                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide"
+                  disabled={voteAck?.phase === 'teamVoting'}
+                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined mr-2">thumb_down</span>
                   TỪ CHỐI
@@ -451,11 +526,14 @@ export default function GamePage() {
 
         {isOnTeam ? (
           <div className="text-center">
-            <p className="text-sm text-muted-foreground mb-4">Bỏ phiếu của bạn:</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              Bỏ phiếu của bạn: (timeout 30s → auto Success)
+            </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
                 onClick={() => voteExecution('success')}
-                className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)]"
+                disabled={voteAck?.phase === 'execution'}
+                className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)] disabled:opacity-50"
               >
                 <span className="material-symbols-outlined mr-2">check_circle</span>
                 HOÀN THÀNH
@@ -463,7 +541,8 @@ export default function GamePage() {
               {!isGood && (
                 <Button
                   onClick={() => voteExecution('fail')}
-                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide"
+                  disabled={voteAck?.phase === 'execution'}
+                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined mr-2">local_fire_department</span>
                   CHÁY DEADLINE
@@ -488,36 +567,139 @@ export default function GamePage() {
     // currentSprint was incremented already; sprint just completed is currentSprint - 1.
     const justFinished = currentSprint - 1;
     const sprintLabel = `Sprint ${Math.max(1, justFinished + 1)}`;
-    // Detect outcome by comparing wins delta: cannot determine from state alone reliably,
-    // but display latest counts.
+    const lastEntry = sprintHistory[sprintHistory.length - 1];
+    const outcome = lastEntry?.outcome ?? null;
+
     return (
       <div className="space-y-6">
         <div className="glass-panel rounded-xl p-6 sm:p-8 text-center">
           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-surface-container mx-auto mb-4 flex items-center justify-center">
             <span
-              className="material-symbols-outlined text-3xl sm:text-4xl text-primary"
+              className={`material-symbols-outlined text-3xl sm:text-4xl ${
+                outcome === 'success'
+                  ? 'text-secondary'
+                  : outcome === 'fail'
+                  ? 'text-error'
+                  : 'text-primary'
+              }`}
               style={{ fontVariationSettings: 'FILL 1' }}
             >
-              fact_check
+              {outcome === 'success'
+                ? 'check_circle'
+                : outcome === 'fail'
+                ? 'local_fire_department'
+                : 'fact_check'}
             </span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
-            {sprintLabel} đã hoàn tất
+            {sprintLabel}{' '}
+            {outcome === 'success'
+              ? '— THÀNH CÔNG'
+              : outcome === 'fail'
+              ? '— CHÁY DEADLINE'
+              : 'đã hoàn tất'}
           </h2>
           <p className="text-muted-foreground font-mono text-sm mb-2">
             Tỉ số: <span className="text-secondary">Tốt {goodWins}</span> /{' '}
             <span className="text-error">Xấu {badWins}</span>
           </p>
+          {lastEntry && (
+            <div className="mt-4 flex flex-col items-center gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                Team Sprint này ({lastEntry.proposedTeam.length})
+              </span>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {lastEntry.proposedTeam.map((id) => (
+                  <div
+                    key={id}
+                    className="flex items-center gap-1 bg-surface-container rounded-full pl-1 pr-2 py-0.5"
+                  >
+                    <div className="w-5 h-5 rounded-full overflow-hidden border border-outline">
+                      <img
+                        src={getAvatarUrl(getPlayerName(id))}
+                        alt={getPlayerName(id)}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="text-[10px] font-mono">{getPlayerName(id)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {myRole === 'Quality Controller' && (
-            <p className="text-xs text-muted-foreground italic mt-2">
+            <p className="text-xs text-muted-foreground italic mt-3">
               💡 Bạn là QC — có thể dùng nút FAB &ldquo;QC Redo&rdquo; để yêu cầu làm lại Sprint này.
             </p>
           )}
           <Button onClick={advanceToPlanning} className="mt-4 px-6 py-3">
             <span className="material-symbols-outlined mr-2">arrow_forward</span>
-            Tiếp tục Sprint kế tiếp
+            Tiếp tục (tan ca kế tiếp)
           </Button>
         </div>
+      </div>
+    );
+  };
+
+  // ─── Discussion (assassination) Phase ───
+  const renderDiscussion = () => {
+    const secs = Math.ceil(phaseRemainingMs / 1000);
+    const mm = Math.floor(secs / 60);
+    const ss = secs % 60;
+    return (
+      <div className="space-y-6">
+        <div className="glass-panel rounded-xl p-6 sm:p-8 text-center border-error/40 glow-red">
+          <span
+            className="material-symbols-outlined text-4xl sm:text-5xl text-error mb-3 block"
+            style={{ fontVariationSettings: 'FILL 1' }}
+          >
+            groups
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-bold text-error mb-2">Thảo luận lật kèo</h2>
+          <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto">
+            Scrum Team đã đạt 3 Sprint thành công. Phe Phá Dự Án có 60 giây thảo luận,
+            sau đó một Người trễ task sẽ chỉ điểm Scrum Master để lật kèo.
+          </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high">
+            <span className="material-symbols-outlined text-base text-muted-foreground">
+              timer
+            </span>
+            <span className="font-mono font-bold text-sm">
+              {mm}:{ss.toString().padStart(2, '0')}
+            </span>
+          </div>
+        </div>
+
+        {isSaboteur && (
+          <div className="glass-panel rounded-xl p-4 sm:p-6 text-center">
+            <h3 className="text-base sm:text-lg font-bold text-error mb-2 uppercase tracking-wide">
+              Vòng lật kèo: Chỉ điểm Scrum Master
+            </h3>
+            <p className="text-xs sm:text-sm text-muted-foreground mb-6">
+              Đoán đúng Scrum Master → phe xấu lật kèo thắng. Đoán sai → Scrum Team chính thức thắng.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {players
+                .filter((p) => p.isAlive && p.id !== playerId)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => saboteurGuess(p.id)}
+                    className="glass-panel rounded-lg p-3 hover:bg-surface-container-high transition-colors flex flex-col items-center gap-2"
+                  >
+                    <div className="w-12 h-12 rounded-full overflow-hidden border border-error/50 bg-surface-container">
+                      <img
+                        src={getAvatarUrl(p.name)}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="text-xs font-semibold">{p.name}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -638,14 +820,22 @@ export default function GamePage() {
               className="w-full h-full object-cover"
             />
           </div>
-          <div>
-            <div className="font-bold text-foreground text-sm">{playerName}</div>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-foreground text-sm truncate">{playerName}</div>
             {myRole && (
               <span className={`text-xs font-mono ${isGood ? 'text-secondary' : 'text-error'}`}>
                 {myRole}
               </span>
             )}
           </div>
+          <button
+            onClick={openRename}
+            className="p-1.5 rounded-lg hover:bg-surface-container-high text-muted-foreground shrink-0"
+            aria-label="Đổi tên"
+            title="Đổi tên hiển thị"
+          >
+            <span className="material-symbols-outlined text-lg">edit</span>
+          </button>
         </div>
         {phase && phase !== 'ended' && (
           <div className="mt-3">
@@ -697,6 +887,9 @@ export default function GamePage() {
           <span className="text-xs text-error font-mono">Bad {badWins}/2</span>
         </div>
       </div>
+
+      {/* Sprint History (collapsible past sprints) */}
+      <SprintHistory />
     </>
   );
 
@@ -809,8 +1002,9 @@ export default function GamePage() {
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {showRoleReveal && <RoleRevealPopup />}
-      <NightZeroOverlay />
+      <NightOverlay />
       <SkillResultToast />
+      <VoteFeedback />
 
       {/* ─── TopNavBar ─── */}
       <nav className="h-14 sm:h-16 shrink-0 bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant flex justify-between items-center px-3 sm:px-6 z-30 gap-2">
@@ -843,6 +1037,15 @@ export default function GamePage() {
         </div>
 
         <button
+          onClick={handleShare}
+          className="p-2 rounded-lg hover:bg-surface-container-high text-primary relative"
+          aria-label="Chia sẻ phòng"
+          title="Chia sẻ link mời vào phòng"
+        >
+          <span className="material-symbols-outlined text-xl">share</span>
+        </button>
+
+        <button
           onClick={() => setChatOpen(true)}
           className="lg:hidden p-2 rounded-lg hover:bg-surface-container-high text-muted-foreground relative"
           aria-label="Chat"
@@ -862,8 +1065,36 @@ export default function GamePage() {
 
         {/* ─── Main canvas ─── */}
         <main className="flex-1 overflow-y-auto relative p-3 sm:p-6 z-10">
-          {phase && phase !== 'ended' && phase !== 'nightZero' && (
+          {phase && phase !== 'ended' && phase !== 'night' && (
             <div className="mb-4 sm:mb-6 max-w-2xl mx-auto">{renderSprintBar()}</div>
+          )}
+
+          {/* Per-phase cooldown TimerBar */}
+          {phaseDeadlineAt && phaseStartedAt && phase && phase !== 'lobby' && phase !== 'ended' && (
+            <div className="mb-4 max-w-2xl mx-auto">
+              <TimerBar
+                remainingMs={phaseRemainingMs}
+                totalMs={Math.max(1, phaseDeadlineAt - phaseStartedAt)}
+                label={
+                  phase === 'night'
+                    ? currentSprint === 0
+                      ? 'Giờ Tan Ca đầu (skill)'
+                      : 'Giờ Tan Ca (skill)'
+                    : phase === 'planning'
+                    ? 'Vào ca (thảo luận + PO chọn)'
+                    : phase === 'teamVoting'
+                    ? 'Biểu quyết duyệt nhóm — 30s'
+                    : phase === 'execution'
+                    ? 'Bỏ phiếu kín — 30s'
+                    : phase === 'sprintResult'
+                    ? 'Sprint kết thúc — kỹ năng QC/DA (20s)'
+                    : phase === 'discussion'
+                    ? 'Thảo luận lật kèo'
+                    : PHASE_LABELS[phase] ?? phase
+                }
+                variant={phase as any}
+              />
+            </div>
           )}
 
           <div className="max-w-4xl mx-auto pb-32">
@@ -872,13 +1103,14 @@ export default function GamePage() {
             {phase === 'teamVoting' && renderTeamVoting()}
             {phase === 'execution' && renderExecution()}
             {phase === 'sprintResult' && renderSprintResult()}
+            {phase === 'discussion' && renderDiscussion()}
             {phase === 'ended' && renderEnded()}
-            {phase === 'nightZero' && (
+            {phase === 'night' && (
               <div className="glass-panel rounded-xl p-6 sm:p-8 text-center">
                 <span className="material-symbols-outlined text-4xl text-primary mb-3 block">
                   bedtime
                 </span>
-                <p className="text-muted-foreground">Giờ Tan Ca Đầu Tiên...</p>
+                <p className="text-muted-foreground">Giờ Tan Ca — dùng skill hoặc chờ...</p>
               </div>
             )}
             {!phase && (
@@ -916,14 +1148,74 @@ export default function GamePage() {
       {/* ─── Floating skill buttons ─── */}
       <SkillFab />
 
+      {/* ─── Share toast ─── */}
+      {shareToast && (
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[60] pointer-events-none">
+          <div className="glass-panel rounded-xl px-4 py-2 border border-secondary/40 flex items-center gap-2 shadow-lg">
+            <span className="material-symbols-outlined text-secondary text-base">check_circle</span>
+            <span className="text-xs font-mono text-foreground">{shareToast}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Rename dialog ─── */}
+      {renameOpen && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+          onClick={() => !renameBusy && setRenameOpen(false)}
+        >
+          <div
+            className="glass-panel rounded-2xl p-6 w-full max-w-sm border border-outline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-primary">edit</span>
+              <h3 className="text-lg font-bold text-foreground">Đổi tên hiển thị</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Tên sẽ hiển thị cho các người chơi khác trong phòng.
+            </p>
+            <input
+              type="text"
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+                if (e.key === 'Escape') setRenameOpen(false);
+              }}
+              maxLength={20}
+              autoFocus
+              className="w-full bg-surface-container border border-outline rounded-lg py-2 px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            />
+            <div className="flex gap-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setRenameOpen(false)}
+                disabled={renameBusy}
+                className="flex-1"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={handleRename}
+                disabled={!renameDraft.trim() || renameBusy}
+                className="flex-1"
+              >
+                {renameBusy ? 'Đang lưu...' : 'Lưu'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── Bottom voting bar ─── */}
       {isVotingPhase && (
         <div className="shrink-0 bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant p-3 sm:p-4 z-30">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground font-mono hidden sm:block">
               {phase === 'teamVoting'
-                ? 'Bỏ phiếu duyệt nhóm...'
-                : 'Bỏ phiếu kín kết quả Sprint...'}
+                ? 'Bỏ phiếu duyệt nhóm (hết giờ = Đồng ý)...'
+                : 'Bỏ phiếu kín kết quả Sprint (hết giờ = Success)...'}
             </span>
             {!isSilenced && (
               <div className="flex gap-2 sm:gap-3 justify-stretch sm:justify-end">
@@ -931,14 +1223,16 @@ export default function GamePage() {
                   <>
                     <Button
                       onClick={() => voteTeam('agree')}
-                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide"
+                      disabled={voteAck?.phase === 'teamVoting'}
+                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
                     >
                       <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_up</span>
-                      DUYỆT
+                      ĐỒNG Ý
                     </Button>
                     <Button
                       onClick={() => voteTeam('reject')}
-                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide"
+                      disabled={voteAck?.phase === 'teamVoting'}
+                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                     >
                       <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_down</span>
                       TỪ CHỐI
@@ -949,7 +1243,8 @@ export default function GamePage() {
                     <>
                       <Button
                         onClick={() => voteExecution('success')}
-                        className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide"
+                        disabled={voteAck?.phase === 'execution'}
+                        className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined mr-1 sm:mr-2">check_circle</span>
                         HOÀN THÀNH
@@ -957,7 +1252,8 @@ export default function GamePage() {
                       {!isGood && (
                         <Button
                           onClick={() => voteExecution('fail')}
-                          className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide"
+                          disabled={voteAck?.phase === 'execution'}
+                          className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                         >
                           <span className="material-symbols-outlined mr-1 sm:mr-2">
                             local_fire_department

@@ -25,6 +25,7 @@ export function SkillFab() {
   const playerId = useGameStore((s) => s.playerId);
   const currentSprint = useGameStore((s) => s.currentSprint);
   const pmOverrideUsed = useGameStore((s) => s.pmOverrideUsed);
+  const pmDeferredThisSprint = useGameStore((s) => s.pmDeferredThisSprint);
   const businessAnalystCheckUsed = useGameStore((s) => s.businessAnalystCheckUsed);
   const qcRedoUsed = useGameStore((s) => s.qcRedoUsed);
   const dataAnalystCheckUsed = useGameStore((s) => s.dataAnalystCheckUsed);
@@ -34,6 +35,7 @@ export function SkillFab() {
   const techDebtActive = useGameStore((s) => s.techDebtActive);
 
   const pmOverride = useGameStore((s) => s.pmOverride);
+  const pmDefer = useGameStore((s) => s.pmDefer);
   const businessAnalystCheck = useGameStore((s) => s.businessAnalystCheck);
   const qcRedo = useGameStore((s) => s.qcRedo);
   const dataAnalystCheck = useGameStore((s) => s.dataAnalystCheck);
@@ -42,23 +44,37 @@ export function SkillFab() {
 
   const [active, setActive] = useState<ActiveSkill>(null);
 
-  if (!phase || phase === 'lobby' || phase === 'nightZero' || phase === 'ended') return null;
+  if (!phase || phase === 'lobby' || phase === 'ended') return null;
   if (!myRole) return null;
 
-  const buttons: Array<{ key: ActiveSkill; label: string; icon: string; accent: 'good' | 'bad' | 'neutral' }> = [];
+  const buttons: Array<{
+    key: ActiveSkill;
+    label: string;
+    icon: string;
+    accent: 'good' | 'bad' | 'neutral';
+    cooldown: string; // e.g. "1/1", "0/1", "Used this sprint"
+  }> = [];
 
-  if (myRole === 'Project Manager' && phase === 'planning' && !pmOverrideUsed) {
-    buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral' });
+  // PM override: planning only, once per game. Show "1/1" once used; show
+  // "Deferred" if PM chose to skip this sprint.
+  if (myRole === 'Project Manager' && phase === 'planning') {
+    if (pmOverrideUsed) {
+      buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral', cooldown: '1/1' });
+    } else if (pmDeferredThisSprint) {
+      buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral', cooldown: 'Deferred' });
+    } else {
+      buttons.push({ key: 'pm', label: 'PM Override', icon: 'gavel', accent: 'neutral', cooldown: '0/1' });
+    }
   }
   if (
     myRole === 'Business Analyst' &&
     !businessAnalystCheckUsed &&
     ['planning', 'teamVoting', 'execution', 'sprintResult'].includes(phase)
   ) {
-    buttons.push({ key: 'ba', label: 'BA Check', icon: 'search_check', accent: 'good' });
+    buttons.push({ key: 'ba', label: 'BA Check', icon: 'search_check', accent: 'good', cooldown: '0/1' });
   }
   if (myRole === 'Quality Controller' && phase === 'sprintResult' && !qcRedoUsed) {
-    buttons.push({ key: 'qc', label: 'QC Redo', icon: 'restart_alt', accent: 'good' });
+    buttons.push({ key: 'qc', label: 'QC Redo', icon: 'restart_alt', accent: 'good', cooldown: '0/1' });
   }
   if (
     myRole === 'Data Analyst' &&
@@ -67,16 +83,36 @@ export function SkillFab() {
     ['planning', 'sprintResult'].includes(phase) &&
     prevSprintTeam.length > 0
   ) {
-    buttons.push({ key: 'da', label: 'DA Check', icon: 'analytics', accent: 'good' });
+    buttons.push({ key: 'da', label: 'DA Check', icon: 'analytics', accent: 'good', cooldown: '0/1' });
   }
-  if (myRole === 'Ông sếp khó ưa' && phase === 'planning' && !sepSilencedPlayerId) {
-    buttons.push({ key: 'sep', label: 'Khóa miệng', icon: 'volume_off', accent: 'bad' });
+  if (myRole === 'Ông sếp khó ưa' && phase === 'planning') {
+    buttons.push({
+      key: 'sep',
+      label: 'Khóa miệng',
+      icon: 'volume_off',
+      accent: 'bad',
+      cooldown: sepSilencedPlayerId ? 'Used this sprint' : '0/1',
+    });
   }
-  if (myRole === 'Deadline' && phase === 'planning' && !deadlineSilenced) {
-    buttons.push({ key: 'deadline', label: 'Áp lực tối đa', icon: 'whatshot', accent: 'bad' });
+  if (myRole === 'Deadline' && phase === 'planning') {
+    buttons.push({
+      key: 'deadline',
+      label: 'Áp lực tối đa',
+      icon: 'whatshot',
+      accent: 'bad',
+      cooldown: deadlineSilenced ? 'Used this sprint' : '0/1',
+    });
   }
 
-  if (buttons.length === 0) return null;
+  // Hide buttons that are used up and don't need any action.
+  const visibleButtons = buttons.filter((b) => {
+    if (b.cooldown === '1/1') return false;
+    if (b.cooldown === 'Used this sprint') return false;
+    if (b.cooldown === 'Deferred') return false;
+    return true;
+  });
+
+  if (visibleButtons.length === 0) return null;
 
   const expectedSize = getSprintSize(players.length, currentSprint, techDebtActive);
   const candidatesAll = players.filter((p) => p.id !== playerId);
@@ -85,7 +121,7 @@ export function SkillFab() {
   return (
     <>
       <div className="fixed bottom-20 sm:bottom-24 right-4 z-50 flex flex-col gap-2 items-end">
-        {buttons.map((b) => {
+        {visibleButtons.map((b) => {
           const accentBg =
             b.accent === 'good'
               ? 'bg-secondary text-secondary-foreground'
@@ -102,20 +138,27 @@ export function SkillFab() {
               <span className="text-xs font-mono uppercase tracking-wider font-semibold">
                 {b.label}
               </span>
+              <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-white">
+                {b.cooldown}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* PM Override */}
+      {/* PM Override — Dùng luôn (không thể hoãn) + Bỏ qua Sprint này */}
       <SkillModal
         open={active === 'pm'}
         onClose={() => setActive(null)}
         title="Chiếm quyền chỉ định"
-        description={`Bạn là PM. Chọn ${expectedSize} người vào nhóm Sprint. Lượt biểu quyết duyệt sẽ bị bỏ qua, đi thẳng vào thực thi.`}
+        description={`Bạn là PM. Chọn ${expectedSize} người vào nhóm Sprint. Nếu dùng, lượt biểu quyết duyệt sẽ bị bỏ qua, đi thẳng vào thực thi. Bạn CÓ CHẮC dùng ngay bây giờ không?`}
         candidates={players}
         pickCount={expectedSize}
-        confirmLabel="Xác nhận nhóm"
+        confirmLabel="Dùng luôn (không thể hoãn)"
+        secondaryLabel="Bỏ qua Sprint này"
+        onSecondary={async () => {
+          await pmDefer();
+        }}
         accent="neutral"
         onConfirm={async (ids) => {
           await pmOverride(ids);

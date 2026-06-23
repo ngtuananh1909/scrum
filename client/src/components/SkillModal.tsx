@@ -19,6 +19,9 @@ interface SkillModalProps {
   confirmLabel: string;
   // Called with the picked ids. For pickCount=0 the array is [].
   onConfirm: (targetIds: string[]) => Promise<void> | void;
+  // Optional secondary action (e.g. "Bỏ qua Sprint này" for PM override).
+  secondaryLabel?: string;
+  onSecondary?: () => Promise<void> | void;
   // Optional accent color: 'good' green, 'bad' red, 'neutral' primary.
   accent?: 'good' | 'bad' | 'neutral';
 }
@@ -32,6 +35,8 @@ export function SkillModal({
   pickCount,
   confirmLabel,
   onConfirm,
+  secondaryLabel,
+  onSecondary,
   accent = 'neutral',
 }: SkillModalProps) {
   const players = useGameStore((s) => s.players);
@@ -60,7 +65,6 @@ export function SkillModal({
       return;
     }
     if (picked.length >= pickCount) {
-      // Replace oldest for pickCount=1; for multi, drop first.
       if (pickCount === 1) setPicked([id]);
       else setPicked([...picked.slice(1), id]);
       return;
@@ -73,6 +77,18 @@ export function SkillModal({
     setBusy(true);
     try {
       await onConfirm(pickCount === 0 ? [] : picked);
+      setPicked([]);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSecondary = async () => {
+    if (!onSecondary) return;
+    setBusy(true);
+    try {
+      await onSecondary();
       setPicked([]);
       onClose();
     } finally {
@@ -128,6 +144,16 @@ export function SkillModal({
             <Button variant="outline" onClick={onClose} disabled={busy} className="flex-1">
               Hủy
             </Button>
+            {secondaryLabel && onSecondary && (
+              <Button
+                onClick={handleSecondary}
+                disabled={busy}
+                variant="outline"
+                className="flex-1 border-warning text-warning hover:bg-warning/10"
+              >
+                {secondaryLabel}
+              </Button>
+            )}
             <Button onClick={handleConfirm} disabled={!enabled} className={`flex-1 ${accentBg}`}>
               {confirmLabel}
             </Button>

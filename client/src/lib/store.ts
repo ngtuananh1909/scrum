@@ -1,13 +1,16 @@
 import { supabaseAdmin } from './supabase';
-import type { Room, Player, Phase, Vote, PlayerRole } from './types';
+import type { Room, Player, Phase, Vote, PlayerRole, SprintHistoryEntry } from './types';
 import {
   assignRoles,
   assignSelectedRoles,
   getSprintSize,
   requiresDoubleFail,
   isGoodRole,
+  isBadRole,
   ROLES,
+  TIMER_DEFAULTS,
   ttsMultiplier,
+  shuffleArray,
 } from './types';
 
 // ===== Supabase-backed room storage =====
@@ -27,8 +30,11 @@ async function readRoom(id: string): Promise<Room | null> {
 }
 
 function normalizeRoom(room: Room): Room {
+  // Migrate legacy 'nightZero' to new 'night' phase name.
+  const phase: Phase = (room.phase as string) === 'nightZero' ? 'night' : room.phase;
   return {
     ...room,
+    phase,
     pmOverrideUsed: room.pmOverrideUsed ?? false,
     dataAnalystCheckUsed: room.dataAnalystCheckUsed ?? false,
     businessAnalystCheckUsed: room.businessAnalystCheckUsed ?? false,
@@ -41,6 +47,12 @@ function normalizeRoom(room: Room): Room {
     prevSprintTeam: room.prevSprintTeam ?? [],
     prevExecutionVotes: room.prevExecutionVotes ?? {},
     prevSprintIndex: room.prevSprintIndex ?? -1,
+    sprintHistory: room.sprintHistory ?? [],
+    phaseStartedAt: room.phaseStartedAt ?? null,
+    phaseDeadlineAt: room.phaseDeadlineAt ?? null,
+    pmDeferredThisSprint: room.pmDeferredThisSprint ?? false,
+    clientId: room.clientId ?? null,
+    poSelectDeadlineAt: room.poSelectDeadlineAt ?? null,
   };
 }
 
@@ -100,6 +112,12 @@ export async function createRoom(
     prevSprintTeam: [],
     prevExecutionVotes: {},
     prevSprintIndex: -1,
+    sprintHistory: [],
+    phaseStartedAt: null,
+    phaseDeadlineAt: null,
+    pmDeferredThisSprint: false,
+    clientId: null,
+    poSelectDeadlineAt: null,
     lastUpdated: Date.now(),
   };
 
@@ -145,6 +163,7 @@ export interface StartGameResult {
   saboteurIds: string[];
   smId: string | null;
   baId: string | null;
+  clientId: string | null;
 }
 
 export async function startGame(
@@ -162,13 +181,18 @@ export async function startGame(
 
   room.players = roles ? assignSelectedRoles(room.players, roles) : assignRoles(room.players);
 
-  // Night-zero phase is only meaningful when a player needs to act in it.
-  // - TTS picks a follow target (server-advanced).
-  // - SM/Client just see info (passive — they don't advance phase).
-  // We enter nightZero only when TTS exists; otherwise we still grant SM/Client
-  // their reveal info via the response payload and skip straight to planning.
-  const hasTts = room.players.some((p) => p.role === 'Thực tập sinh');
-  room.phase = hasTts ? 'nightZero' : 'planning';
+  // Always enter Tan ca (night) on game start. SM/BA/Client see info passively;
+  // TTS picks follow target; everyone else waits. After timeout OR all skill-users
+  // confirm, advance to planning.
+  const now = Date.now();
+  room.phase = 'night';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.nightFirstMs;
+
+  // Compute Client id once so BA can discover it from night 0 onwards.
+  const client = room.players.find((p) => p.role === 'Client');
+  room.clientId = client?.id ?? null;
+
   await writeRoom(room);
 
   return buildRoleInfo(room, playerId);
@@ -177,7 +201,7 @@ export async function startGame(
 function buildRoleInfo(room: Room, playerId: string): StartGameResult {
   const me = findPlayer(room, playerId);
   if (!me || !me.role) {
-    return { room, role: '', isGood: true, saboteurIds: [], smId: null, baId: null };
+    return { room, role: '', isGood: true, saboteurIds: [], smId: null, baId: null, clientId: null };
   }
 
   const allSaboteurIds = room.players
@@ -185,6 +209,7 @@ function buildRoleInfo(room: Room, playerId: string): StartGameResult {
     .map((p) => p.id);
   const sm = room.players.find((p) => p.role === 'Scrum Master');
   const ba = room.players.find((p) => p.role === 'Business Analyst');
+  const client = room.players.find((p) => p.role === 'Client');
 
   return {
     room,
@@ -200,6 +225,8 @@ function buildRoleInfo(room: Room, playerId: string): StartGameResult {
     smId: me.role === 'Scrum Master' ? sm?.id ?? null : null,
     // Client knows BA identity from night zero.
     baId: me.role === 'Client' ? ba?.id ?? null : null,
+    // BA knows Client identity from night zero (mutual reveal).
+    clientId: me.role === 'Business Analyst' ? client?.id ?? room.clientId ?? null : null,
   };
 }
 
@@ -214,10 +241,11 @@ export async function getRoleInfo(roomId: string, playerId: string): Promise<Sta
   return buildRoleInfo(room, playerId);
 }
 
-// ===== Night zero =====
+// ===== Night (tan ca) =====
 
-// Called by TTS to record their follow target; advances phase to planning.
-// If no TTS in room, startGame skips nightZero entirely.
+// Called by TTS to record their follow target during the FIRST night only.
+// For subsequent nights (no TTS action), use nightAdvance() to move to planning.
+// After TTS confirms, phase advances to planning.
 export async function nightZeroComplete(
   roomId: string,
   playerId: string,
@@ -225,14 +253,15 @@ export async function nightZeroComplete(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'nightZero') return null;
+  if (room.phase !== 'night') return null;
+  if (room.currentSprint > 0) return null; // TTS only picks on first night
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Thực tập sinh') return null;
   if (ttsTargetId && !findPlayer(room, ttsTargetId)) return null;
 
   room.ttsFollowTargetId = ttsTargetId;
-  room.phase = 'planning';
+
   await writeRoom(room);
   return room;
 }
@@ -254,10 +283,14 @@ export async function proposeTeam(
   const expectedSize = getSprintSize(room.players.length, room.currentSprint, room.techDebtActive);
   if (playerIds.length !== expectedSize) return null;
 
+  const now = Date.now();
   room.proposedTeam = playerIds;
   room.votes = {};
   room.executionVotes = {};
   room.phase = 'teamVoting';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.teamVoteMs;
+  room.poSelectDeadlineAt = null;
 
   await writeRoom(room);
   return room;
@@ -288,6 +321,22 @@ export async function voteTeam(
   return room;
 }
 
+// Auto-fill missing team votes with 'agree' (per user requirement: timeout = agree),
+// then tally. Called when teamVote deadline expires.
+export async function autoFillTeamVote(roomId: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'teamVoting') return null;
+
+  const eligibleVoters = room.players.filter(
+    (p) => p.isAlive && !(room.deadlineSilenced || room.sepSilencedPlayerId === p.id)
+  );
+  for (const p of eligibleVoters) {
+    if (!room.votes[p.id]) room.votes[p.id] = 'agree';
+  }
+  return tallyTeamVote(room);
+}
+
 async function tallyTeamVote(room: Room): Promise<Room> {
   // Apply TTS x2 multiplier from Sprint 2 onward.
   let agreeWeight = 0;
@@ -299,7 +348,10 @@ async function tallyTeamVote(room: Room): Promise<Room> {
   }
 
   if (agreeWeight > rejectWeight) {
+    const now = Date.now();
     room.phase = 'execution';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = now + TIMER_DEFAULTS.executionVoteMs;
     room.consecutiveDelays = 0;
     room.techLeadPresent = room.proposedTeam.some((id) => {
       const p = findPlayer(room, id);
@@ -314,13 +366,23 @@ async function tallyTeamVote(room: Room): Promise<Room> {
 
     if (room.consecutiveDelays >= 4) {
       room.phase = 'ended';
+      room.phaseDeadlineAt = null;
+      room.phaseStartedAt = null;
       room.badWins = Math.max(room.badWins, 2);
       await writeRoom(room);
       return room;
     }
+    const now = Date.now();
     room.phase = 'planning';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = now + TIMER_DEFAULTS.planningMs;
+    room.poSelectDeadlineAt = now + TIMER_DEFAULTS.poSelectTeamMs;
     room.votes = {};
     room.proposedTeam = [];
+    // Reset per-sprint skill flags
+    room.sepSilencedPlayerId = null;
+    room.deadlineSilenced = false;
+    room.pmDeferredThisSprint = false;
   }
 
   await writeRoom(room);
@@ -342,7 +404,7 @@ export async function voteExecution(
   if (!player || !player.role) return null;
 
   // Good roles cannot vote fail.
-  if (!(ROLES.BAD as readonly string[]).includes(player.role) && vote === 'fail') {
+  if (isGoodRole(player.role) && vote === 'fail') {
     return null;
   }
 
@@ -354,6 +416,17 @@ export async function voteExecution(
 
   await writeRoom(room);
   return room;
+}
+
+// Auto-fill missing execution votes with 'success' (per spec PDF §1.1).
+export async function autoFillExecutionVote(roomId: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'execution') return null;
+  for (const pid of room.proposedTeam) {
+    if (!room.executionVotes[pid]) room.executionVotes[pid] = 'success';
+  }
+  return tallyExecutionVote(room);
 }
 
 async function tallyExecutionVote(room: Room): Promise<Room> {
@@ -368,7 +441,7 @@ async function tallyExecutionVote(room: Room): Promise<Room> {
       success += 1;
     }
   }
-  void success; // tracked for clarity, not used in tally
+  void success;
 
   // Snapshot for Data Analyst check in next sprint.
   room.prevSprintTeam = [...room.proposedTeam];
@@ -393,59 +466,158 @@ async function tallyExecutionVote(room: Room): Promise<Room> {
     room.goodWins++;
   }
 
-  room.phase = 'sprintResult';
+  // Append to sprint history BEFORE incrementing currentSprint.
+  const historyEntry: SprintHistoryEntry = {
+    sprintIndex: room.currentSprint + 1,
+    proposedTeam: [...room.proposedTeam],
+    outcome: sprintFailed ? 'fail' : 'success',
+    votesAgree: { ...room.votes } as Record<string, 'agree' | 'reject'>,
+    votesExecution: { ...room.executionVotes } as Record<string, 'success' | 'fail'>,
+    timestamp: Date.now(),
+  };
+  room.sprintHistory = [...(room.sprintHistory ?? []), historyEntry];
+
   room.currentSprint++;
-  advanceAfterSprint(room, tdOnTeam);
+  transitionAfterResult(room, tdOnTeam);
 
   await writeRoom(room);
   return room;
 }
 
-// After incrementing currentSprint, set next phase + reset per-sprint flags.
-function advanceAfterSprint(room: Room, techDebtOnPrevTeam: boolean): void {
-  // Check terminal conditions first (these short-circuit phase).
+// After incrementing currentSprint, transition phase and reset per-sprint flags.
+// Goes to night (tan ca) for next sprint, OR ended/discussion on terminal.
+function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
+  const now = Date.now();
+
+  // Terminal: bad team wins outright.
   if (room.badWins >= 2) {
     room.phase = 'ended';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = null;
     return;
   }
+  // Terminal: good team reached 3 wins → enter discussion (assassination).
   if (room.goodWins >= 3) {
-    room.phase = 'ended';
+    room.phase = 'discussion';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = now + TIMER_DEFAULTS.assassinationMs;
     return;
   }
+  // Terminal: ran out of sprints.
   if (room.currentSprint >= 4) {
     room.phase = 'ended';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = null;
     return;
   }
 
-  // Mid-game: stay in sprintResult briefly so client can show outcome + allow QC redo skill,
-  // then UI flips to planning on Continue. To keep server-driven flow simple we go straight
-  // to planning here; QC redo is gated on phase === 'sprintResult' separately at the API.
-  // Actually per plan we keep `sprintResult` phase so QC has window — leave at sprintResult.
-  // Per-sprint resets:
+  // Stay in sprintResult briefly (20s) so QC redo / DA check window applies,
+  // then advance to night (tan ca) via advanceFromSprintResult.
+  room.phase = 'sprintResult';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.postSprintMs;
+
+  // Per-sprint resets (apply now so post-sprint skill window has clean state).
   room.sepSilencedPlayerId = null;
   room.deadlineSilenced = false;
   room.proposedTeam = [];
   room.votes = {};
   room.executionVotes = {};
   room.techLeadPresent = false;
-  room.techDebtActive = techDebtOnPrevTeam; // applies +1 to upcoming sprint
-  // Rotate PO to next alive player for next sprint.
-  do {
-    room.currentPO = (room.currentPO + 1) % room.players.length;
-  } while (!room.players[room.currentPO]?.isAlive);
+  room.techDebtActive = techDebtOnPrevTeam;
+  room.poSelectDeadlineAt = null;
+  // Don't rotate PO yet — that happens when entering planning phase.
 }
 
-// Called by client after sprintResult is acknowledged — advances phase to planning.
-export async function advanceToPlanning(roomId: string, playerId: string): Promise<Room | null> {
+// Called by client after sprintResult acknowledged OR auto-expired.
+// Moves from sprintResult → night (tan ca) for next sprint.
+export async function advanceFromSprintResult(roomId: string, playerId?: string): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
   if (room.phase !== 'sprintResult') return null;
-  // Any player can advance (consensus by latest click).
-  if (!findPlayer(room, playerId)) return null;
 
-  room.phase = 'planning';
+  const now = Date.now();
+  room.phase = 'night';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.nightRecurringMs;
+
   await writeRoom(room);
   return room;
+}
+
+// Called by client to advance from night (tan ca) → planning (vào ca).
+export async function nightAdvance(roomId: string, playerId?: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'night') return null;
+
+  const now = Date.now();
+  room.phase = 'planning';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.planningMs;
+  room.poSelectDeadlineAt = now + TIMER_DEFAULTS.poSelectTeamMs;
+  room.pmDeferredThisSprint = false;
+  // TTS follow target persists across rounds; do not reset here.
+
+  await writeRoom(room);
+  return room;
+}
+
+// Called by client after sprintResult is acknowledged — advances phase to planning.
+// (Legacy endpoint — now delegates to advanceFromSprintResult.)
+export async function advanceToPlanning(roomId: string, playerId: string): Promise<Room | null> {
+  return advanceFromSprintResult(roomId, playerId);
+}
+
+// Generic auto-advance dispatcher: when a phase's deadline expires,
+// call this to advance to the next phase appropriately.
+export async function autoAdvancePhase(roomId: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+
+  switch (room.phase) {
+    case 'night':
+      return nightAdvance(roomId);
+    case 'sprintResult':
+      return advanceFromSprintResult(roomId);
+    case 'teamVoting':
+      return autoFillTeamVote(roomId);
+    case 'execution':
+      return autoFillExecutionVote(roomId);
+    case 'planning': {
+      // PO selection timeout — auto-pick random team.
+      if (
+        room.poSelectDeadlineAt &&
+        Date.now() >= room.poSelectDeadlineAt
+      ) {
+        return autoSelectTeam(roomId);
+      }
+      // Otherwise planning discussion timer expiration is non-terminal — just refresh.
+      return room;
+    }
+    case 'discussion':
+      // Auto-end discussion (no saboteur-guess was made in time).
+      room.phase = 'ended';
+      room.phaseDeadlineAt = null;
+      await writeRoom(room);
+      return room;
+    default:
+      return room;
+  }
+}
+
+// PO selection timeout → randomly pick requiredSize alive players and submit.
+export async function autoSelectTeam(roomId: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'planning') return null;
+
+  const required = getSprintSize(room.players.length, room.currentSprint, room.techDebtActive);
+  const alive = room.players.filter((p) => p.isAlive);
+  const shuffled = shuffleArray(alive);
+  const picked = shuffled.slice(0, required).map((p) => p.id);
+
+  return proposeTeam(roomId, room.players[room.currentPO]?.id ?? '', picked);
 }
 
 export async function saboteurGuess(
@@ -466,6 +638,7 @@ export async function saboteurGuess(
   const correct = Boolean(SM && SM.id === guessedSmId);
 
   room.phase = 'ended';
+  room.phaseDeadlineAt = null;
   room.saboteurGuess = guessedSmId;
   if (correct) {
     // Bad team flips the win — set badWins so client win detection picks it up.
@@ -490,18 +663,41 @@ export async function skillPmOverride(
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Project Manager') return null;
   if (room.pmOverrideUsed) return null;
+  if (room.pmDeferredThisSprint) return null; // already deferred this sprint
 
   const expectedSize = getSprintSize(room.players.length, room.currentSprint, room.techDebtActive);
   if (playerIds.length !== expectedSize) return null;
 
+  const now = Date.now();
   room.proposedTeam = playerIds;
   room.votes = {};
   room.executionVotes = {};
   room.pmOverrideUsed = true;
+  room.pmDeferredThisSprint = true; // committed — can't defer anymore this sprint
   room.consecutiveDelays = 0;
   room.techLeadPresent = playerIds.some((id) => findPlayer(room, id)?.role === 'Technical Leader');
   room.phase = 'execution'; // skip teamVoting entirely
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.executionVoteMs;
+  room.poSelectDeadlineAt = null;
 
+  await writeRoom(room);
+  return room;
+}
+
+// PM explicitly defers using override this sprint — keeps 1-shot for a future sprint.
+export async function skillPmDefer(
+  roomId: string,
+  playerId: string
+): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  if (room.phase !== 'planning') return null;
+  const me = findPlayer(room, playerId);
+  if (!me || me.role !== 'Project Manager') return null;
+  if (room.pmOverrideUsed) return null;
+  if (room.pmDeferredThisSprint) return null;
+  room.pmDeferredThisSprint = true;
   await writeRoom(room);
   return room;
 }
@@ -585,7 +781,11 @@ export async function skillQcRedo(
   // Rewind to the sprint that was just played.
   room.currentSprint = Math.max(0, prevIdx);
   room.qcRedoUsed = true;
+  const now = Date.now();
   room.phase = 'planning';
+  room.phaseStartedAt = now;
+  room.phaseDeadlineAt = now + TIMER_DEFAULTS.planningMs;
+  room.poSelectDeadlineAt = now + TIMER_DEFAULTS.poSelectTeamMs;
   room.proposedTeam = [];
   room.votes = {};
   room.executionVotes = {};
@@ -595,6 +795,11 @@ export async function skillQcRedo(
   do {
     room.currentPO = (room.currentPO - 1 + room.players.length) % room.players.length;
   } while (!room.players[room.currentPO]?.isAlive);
+
+  // Pop the last sprint history entry since we're rolling back.
+  if (room.sprintHistory.length > 0) {
+    room.sprintHistory = room.sprintHistory.slice(0, -1);
+  }
 
   await writeRoom(room);
   return room;
@@ -677,6 +882,27 @@ export async function skillDeadlineSilence(
 // Poll-based sync for client (fallback when Realtime unavailable)
 export async function pollRoom(roomId: string): Promise<Room | null> {
   return readRoom(roomId);
+}
+
+// ===== Player self-service =====
+
+// Allow a player to change their display name at any time during the game.
+// Useful after joining via shared link (name was set on landing page) or
+// to fix a typo. The new name syncs to all clients via Supabase Realtime.
+export async function renamePlayer(
+  roomId: string,
+  playerId: string,
+  newName: string
+): Promise<Room | null> {
+  const trimmed = newName.trim().slice(0, 20);
+  if (!trimmed) return null;
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  const me = room.players.find((p) => p.id === playerId);
+  if (!me) return null;
+  me.name = trimmed;
+  await writeRoom(room);
+  return room;
 }
 
 // Re-exports for tests (kept for backwards compat with route handlers).
