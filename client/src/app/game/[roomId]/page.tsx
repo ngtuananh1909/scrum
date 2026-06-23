@@ -6,6 +6,7 @@ import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChatPanel } from '@/components/ChatPanel';
+import { getSprintSize } from '@/lib/types';
 
 const SPRINT_NAMES = ['Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 4'];
 
@@ -178,7 +179,7 @@ export default function GamePage() {
 
   // ─── Planning Phase ───
   const renderPlanning = () => {
-    const requiredSize = [2, 3, 3, 4, 4, 4, 5, 5, 5, 6][Math.min(players.length - 1, 9)] || 3;
+    const requiredSize = getSprintSize(players.length, currentSprint);
 
     return (
       <div className="space-y-6">
@@ -526,7 +527,7 @@ export default function GamePage() {
             {renderSprintBar()}
             <div className="flex justify-between mt-2">
               <span className="text-xs text-secondary font-mono">Good {goodWins}/2</span>
-              <span className="text-xs text-error font-mono">Bad {badWins}/3</span>
+              <span className="text-xs text-error font-mono">Bad {badWins}/2</span>
             </div>
           </div>
 

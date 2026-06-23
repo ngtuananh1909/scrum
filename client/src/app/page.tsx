@@ -168,7 +168,7 @@ export default function Lobby() {
               5–10 players · Good vs Bad
             </p>
             <p className="text-xs text-muted-foreground">
-              Good: complete 3 sprints · Bad: fail 3 sprints or 4 delays
+              Good: complete 4 sprints · Bad: fail 2 sprints, 4 delays, or guess the SM
             </p>
           </div>
         </div>

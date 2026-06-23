@@ -232,6 +232,7 @@ async function tallyTeamVote(room: Room): Promise<Room> {
       room.phase = 'sprintResult';
       room.badWins++;
       room.qcBugged = false;
+      room.currentSprint++;
       checkWinCondition(room);
       await writeRoom(room);
       return room;
