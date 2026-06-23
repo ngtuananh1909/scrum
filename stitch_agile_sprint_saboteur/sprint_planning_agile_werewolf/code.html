@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sprint Planning - Agile Werewolf</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&amp;family=Geist+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-fixed-variant": "#005321",
+                      "on-error-container": "#ffdad6",
+                      "primary-fixed-dim": "#c0c1ff",
+                      "on-tertiary-fixed": "#410004",
+                      "surface-container-low": "#131b2e",
+                      "on-primary-fixed-variant": "#2f2ebe",
+                      "on-surface-variant": "#c7c4d7",
+                      "secondary": "#4ae176",
+                      "primary": "#c0c1ff",
+                      "surface-container-highest": "#2d3449",
+                      "surface": "#0b1326",
+                      "background": "#0b1326",
+                      "primary-container": "#8083ff",
+                      "surface-tint": "#c0c1ff",
+                      "tertiary-container": "#ff5451",
+                      "surface-dim": "#0b1326",
+                      "surface-container": "#171f33",
+                      "secondary-fixed-dim": "#4ae176",
+                      "on-error": "#690005",
+                      "secondary-fixed": "#6bff8f",
+                      "inverse-surface": "#dae2fd",
+                      "on-secondary": "#003915",
+                      "outline": "#908fa0",
+                      "on-secondary-container": "#004119",
+                      "on-secondary-fixed": "#002109",
+                      "surface-container-lowest": "#060e20",
+                      "surface-container-high": "#222a3d",
+                      "secondary-container": "#00b954",
+                      "inverse-primary": "#494bd6",
+                      "surface-variant": "#2d3449",
+                      "surface-bright": "#31394d",
+                      "on-primary": "#1000a9",
+                      "inverse-on-surface": "#283044",
+                      "on-tertiary": "#68000a",
+                      "on-tertiary-container": "#5c0008",
+                      "error": "#ffb4ab",
+                      "on-tertiary-fixed-variant": "#930013",
+                      "on-primary-fixed": "#07006c",
+                      "outline-variant": "#464554",
+                      "on-surface": "#dae2fd",
+                      "tertiary": "#ffb3ad",
+                      "tertiary-fixed": "#ffdad7",
+                      "on-background": "#dae2fd",
+                      "error-container": "#93000a",
+                      "tertiary-fixed-dim": "#ffb3ad",
+                      "on-primary-container": "#0d0096",
+                      "primary-fixed": "#e1e0ff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-sm": "0.5rem",
+                      "stack-md": "1rem",
+                      "container-max": "1200px",
+                      "stack-lg": "2rem",
+                      "gutter": "1.5rem",
+                      "margin": "2rem"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "label-caps": [
+                              "Geist"
+                      ],
+                      "body-lg": [
+                              "Geist"
+                      ],
+                      "headline-lg-mobile": [
+                              "Geist"
+                      ],
+                      "headline-lg": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Geist"
+                      ],
+                      "mono-ui": [
+                              "Geist Mono"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.1em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.04em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "56px",
+                                      "letterSpacing": "-0.04em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "mono-ui": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "500"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: #0F172A; /* Base Level 1 */
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.05), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(74, 225, 118, 0.03), transparent 25%);
+        }
+        
+        .glass-panel {
+            background-color: rgba(30, 41, 59, 0.6); /* Level 2 fill */
+            backdrop-filter: blur(12px);
+            border: 1px solid #1e293b; /* Slate-800 equivalent neutral border */
+        }
+
+        .glass-modal {
+            background-color: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(20px);
+            box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.2); /* Indigo inner glow */
+        }
+
+        .status-strip-neutral { border-left: 4px solid #94a3b8; } /* Slate-400 */
+        .status-strip-po { border-left: 4px solid #6366f1; } /* Primary/Indigo */
+        .status-strip-nominated { border-left: 4px solid #4ae176; } /* Secondary/Green */
+
+        /* Custom scrollbar for chat/logs */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+      </style>
+</head>
+<body class="text-on-surface h-screen w-screen overflow-hidden flex flex-col font-body-md">
+<!-- TopNavBar Component -->
+<header class="bg-surface-dim/80 backdrop-blur-xl docked full-width top-0 border-b border-outline-variant flat no shadows flex justify-between items-center w-full px-gutter h-16 z-50 shrink-0">
+<div class="flex items-center gap-4">
+<span class="font-headline-md text-headline-md font-bold tracking-tighter text-primary">AGILE WEREWOLF</span>
+<nav class="hidden md:flex items-center gap-6 ml-8">
+<span class="text-on-surface-variant text-body-md font-body-md">Room ID: 8821</span>
+<span class="text-secondary font-bold text-body-md font-body-md">Sprint 1/5</span>
+<span class="text-on-surface-variant text-body-md font-body-md">Rejects: 0/4</span>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest active:scale-95 duration-150 flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-full hover:bg-surface-container-highest active:scale-95 duration-150 flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help</span>
+</button>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden relative">
+<!-- Phase Indicator Banner -->
+<div class="absolute top-0 left-0 w-full flex justify-center pt-stack-lg z-10 pointer-events-none">
+<div class="glass-modal px-8 py-4 rounded-xl flex flex-col items-center">
+<span class="font-label-caps text-label-caps text-primary tracking-widest uppercase mb-1">Current Phase</span>
+<h1 class="font-headline-lg text-headline-lg text-on-surface font-bold">Sprint Planning</h1>
+</div>
+</div>
+<!-- Main Content Area (Board) -->
+<main class="flex-1 h-full overflow-y-auto p-gutter pt-32 pb-32">
+<div class="max-w-4xl mx-auto flex flex-col gap-stack-lg">
+<!-- Product Owner Context -->
+<div class="glass-panel p-6 rounded-xl flex items-center justify-between border-l-4 border-l-primary-container">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-2">You are the Product Owner</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Nominate 3 developers for the upcoming sprint. The team must approve your plan.</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-mono-ui text-mono-ui text-on-surface-variant">Required Devs</span>
+<span class="font-headline-md text-headline-md text-secondary">0 / 3</span>
+</div>
+</div>
+<!-- Team Nomination Grid -->
+<div>
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-stack-md ml-2">Available Roster</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-stack-md">
+<!-- Player Card (Self/PO) -->
+<button class="glass-panel rounded-lg p-4 flex items-start gap-4 status-strip-po hover:bg-surface-container-high transition-colors text-left group">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A futuristic avatar of a tech professional in a cyberpunk command center, dark atmospheric lighting with neon indigo accents, hyper-realistic, digital art style, high contrast." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7lvvS6sKGVyi8ZiEIEHUltSh4DpHW4eS3RKbPbnspMWI2NHuRSD8b134nGx_maBeSE0IKnRb51QcJ7qvaJeyl6PfqtVg2SSLZP9YL755y7Oj3tu3tOSMaygjzGBf0kWPaTl3TgKItmJAMUJtTmOzvLqouyHQdbrmxoUcltEYAs9hNuZ0OugXQKVqCQUBnSIpVTB62MX_j5N921DbiaB1gfTx3zWWOFDhTcy99nidRk6NlROX2Bmxs4tLgb0_22FqrtcdDB6jqSAw"/>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-bold text-on-surface group-hover:text-primary transition-colors">You (PO)</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">Sr. Engineer</span>
+</div>
+<div class="shrink-0 w-6 h-6 rounded-full border border-outline flex items-center justify-center group-hover:border-primary transition-colors">
+<!-- empty checkbox state -->
+</div>
+</button>
+<!-- Player Card (Nominated) -->
+<button class="glass-panel rounded-lg p-4 flex items-start gap-4 status-strip-nominated hover:bg-surface-container-high transition-colors text-left group border-secondary/50">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A futuristic avatar of a developer in a dimly lit server room, glowing green data streams reflecting on glasses, hyper-realistic, cyber-noir style, moody lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJleUhdYrd4qEjlHopWh7krH9j6KvnlpUesUL1msbaBUmIwDBwqSkRXsBwSd71Q0Vwn5O8aYW5SdUF1S2JwzgsIg55ET9y5dbZp-phXSbjD-c7DfF9-1kkobrnyUdedzPpVI9g-K9rx422gtINntdzR1KZsHDJDCOlgCt85kmaJdzKGJGCUGC4iKTVc6bnkR6aVKCBCVm27ZL80VhLYagDei2-_CI4jIgtobyYwuGXPheDaXKagwvrFr3QsgUIGsIyyRMYAzspGec"/>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-bold text-on-surface">Alex_Dev</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">Frontend</span>
+</div>
+<div class="shrink-0 w-6 h-6 rounded-full bg-secondary text-on-secondary flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px]">check</span>
+</div>
+</button>
+<!-- Player Card (Neutral) -->
+<button class="glass-panel rounded-lg p-4 flex items-start gap-4 status-strip-neutral hover:bg-surface-container-high transition-colors text-left group">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A portrait of a mysterious UI designer in a sleek, minimalist dark workspace, subtle blue monitor glow, cinematic lighting, sharp focus, professional tech environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCu1i60DmbF5WrnJYqSx5KLCckVKilRm95fUJ0C_vhS5Yr87j7pmJlILDDiY5sxkQBge-qAKCoQhmy21IaWCpANn1Fi-8umIaTGIDujAXNphdhgf6L-5pEdSOPbHHrfgeA82pso-OIIybNx45zs5akNqCelGOwU4aqj0q6uQSkwestj5A3etYYCQiWYyxzjm0x2T1f0XFfMAZeZjRhSILx8QAdjOxBJWEXktR5rREPDibDZqfLt2QOJdqW22R6UZkPDcz_mVaqG5OE"/>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-bold text-on-surface group-hover:text-primary transition-colors">Sam_UX</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">Designer</span>
+</div>
+<div class="shrink-0 w-6 h-6 rounded-full border border-outline flex items-center justify-center group-hover:border-primary transition-colors">
+</div>
+</button>
+<!-- Player Card (Neutral) -->
+<button class="glass-panel rounded-lg p-4 flex items-start gap-4 status-strip-neutral hover:bg-surface-container-high transition-colors text-left group">
+<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A portrait of a backend architect in a high-tech control room, monitors displaying complex code structures in the background, sharp shadows, cool blue and green tones, highly detailed." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBR0s7wcnERb-_q88oMYBfHv8CSVUqpk6JjvMeXpCQ54Z0UnuHjPOsWirzlRY_EDWEb_Qgk9m3212rRomjoTcBBjebPK1VhlzYZydEAT4C4hIyxyxR5_-u4Nyx_adOQTNKTYpHXM7ZlL5X6Z7zS4LZQfEf7uLf9NpkF5QperJGxoB948MuBH_zjBcbZqbbrg9GFkt2ZwYRJiCdhslVQu6lK5ql0dTZPVe58gDCRGOs6RBO5Q56lH7gzLnpTBPjUL-l-ATOEoz3lZxU"/>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-center mb-1">
+<span class="font-body-md text-body-md font-bold text-on-surface group-hover:text-primary transition-colors">Taylor_Ops</span>
+</div>
+<span class="font-label-caps text-label-caps text-on-surface-variant">DevOps</span>
+</div>
+<div class="shrink-0 w-6 h-6 rounded-full border border-outline flex items-center justify-center group-hover:border-primary transition-colors">
+</div>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- SideNavBar Component (Logs/Chat) -->
+<aside class="hidden md:flex flex-col h-full overflow-hidden bg-surface-container-low/60 backdrop-blur-lg docked right-0 w-80 border-l border-outline-variant flat no shadows transition-all duration-200 shrink-0">
+<!-- SideNav Tabs -->
+<div class="flex border-b border-outline-variant">
+<button class="flex-1 py-3 px-2 flex flex-col items-center gap-1 text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="font-label-caps text-[10px]">Board</span>
+</button>
+<button class="flex-1 py-3 px-2 flex flex-col items-center gap-1 text-secondary border-b-2 border-secondary bg-secondary-container/10 transition-colors">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">forum</span>
+<span class="font-label-caps text-[10px]">Chat</span>
+</button>
+<button class="flex-1 py-3 px-2 flex flex-col items-center gap-1 text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 0;">history</span>
+<span class="font-label-caps text-[10px]">Logs</span>
+</button>
+</div>
+<!-- Chat Content -->
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+<!-- System Message -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="font-mono-ui text-[12px] text-on-surface-variant">SYSTEM • 10:42</span>
+</div>
+<p class="font-mono-ui text-mono-ui text-on-surface bg-surface-container-highest p-2 rounded border border-outline-variant/50">Sprint Planning phase initiated. Product Owner must nominate 3 developers.</p>
+</div>
+<!-- User Message -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<span class="font-mono-ui text-[12px] text-on-surface-variant">Alex_Dev • 10:43</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface bg-surface-container p-2 rounded-r-lg rounded-bl-lg">I've got capacity this sprint, put me in.</p>
+</div>
+<!-- User Message (Self) -->
+<div class="flex flex-col gap-1 items-end">
+<div class="flex items-center gap-2">
+<span class="font-mono-ui text-[12px] text-primary">You • 10:44</span>
+</div>
+<p class="font-body-md text-body-md text-on-primary-container bg-primary-container p-2 rounded-l-lg rounded-br-lg">Adding you now.</p>
+</div>
+</div>
+<!-- Chat Input -->
+<div class="p-4 border-t border-outline-variant bg-surface-container-lowest">
+<div class="relative">
+<input class="w-full bg-surface-container border border-outline-variant rounded-lg py-2 pl-3 pr-10 text-on-surface font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none placeholder:text-outline" placeholder="Send message..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">send</span>
+</button>
+</div>
+</div>
+<!-- SideNav Footer -->
+<div class="border-t border-outline-variant flex">
+<button class="flex-1 py-3 flex items-center justify-center gap-2 text-on-surface-variant hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">account_circle</span>
+<span class="font-label-caps text-[11px]">Profile</span>
+</button>
+<div class="w-px bg-outline-variant"></div>
+<button class="flex-1 py-3 flex items-center justify-center gap-2 text-error hover:bg-error-container/20 transition-colors">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+<span class="font-label-caps text-[11px]">Leave</span>
+</button>
+</div>
+</aside>
+</div>
+<!-- Bottom Action Bar (Voting) -->
+<div class="absolute bottom-0 left-0 w-full md:w-[calc(100%-20rem)] bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant p-4 z-40">
+<div class="max-w-4xl mx-auto flex items-center justify-between gap-4">
+<div class="hidden sm:block">
+<span class="font-mono-ui text-mono-ui text-on-surface-variant">Waiting for nomination...</span>
+</div>
+<div class="flex gap-4 flex-1 sm:flex-none justify-end">
+<button class="flex-1 sm:flex-none px-6 py-3 rounded-lg border border-error text-error font-label-caps text-label-caps tracking-wider opacity-50 cursor-not-allowed flex items-center justify-center gap-2 hover:bg-error/10 transition-colors" disabled="">
+<span class="material-symbols-outlined text-[18px]">close</span>
+                    REJECT SPRINT PLAN
+                </button>
+<button class="flex-1 sm:flex-none px-6 py-3 rounded-lg bg-secondary text-on-secondary font-label-caps text-label-caps tracking-wider opacity-50 cursor-not-allowed flex items-center justify-center gap-2 hover:bg-secondary-fixed transition-colors shadow-[0_0_15px_rgba(74,225,118,0.2)]" disabled="">
+<span class="material-symbols-outlined text-[18px]">check</span>
+                    APPROVE SPRINT PLAN
+                </button>
+</div>
+</div>
+</div>
+</body></html>
