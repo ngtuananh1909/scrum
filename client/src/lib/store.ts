@@ -247,7 +247,7 @@ async function tallyTeamVote(room: Room): Promise<Room> {
 
     if (room.consecutiveDelays >= 4) {
       room.phase = 'ended';
-      room.badWins = 3;
+      room.badWins = 2;
       await writeRoom(room);
       return room;
     }
@@ -327,7 +327,7 @@ function checkWinCondition(room: Room): void {
     return;
   }
 
-  if (room.goodWins >= 2) {
+  if (room.goodWins >= 3) {
     room.phase = 'ended';
     return;
   }

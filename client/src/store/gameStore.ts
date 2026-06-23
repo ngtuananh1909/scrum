@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Player, Phase, ChatMessage, Room } from '@/lib/types';
 import { getOrCreatePlayerId } from '@/lib/identity';
 import { getSupabase } from '@/lib/supabaseBrowser';
@@ -61,30 +62,32 @@ interface GameStore extends RoomState {
   }) => void;
 }
 
-export const useGameStore = create<GameStore>((set, get) => ({
-  roomId: null,
-  playerId: null,
-  playerName: null,
-  players: [],
-  phase: null,
-  currentSprint: 0,
-  proposedTeam: [],
-  currentPO: null,
-  myRole: null,
-  isGood: true,
-  saboteurIds: [],
-  smId: null,
-  goodWins: 0,
-  badWins: 0,
-  consecutiveDelays: 0,
-  techLeadPresent: false,
-  qcBugged: false,
-  messages: [],
-  error: null,
-  realtimeChannel: null,
-  pollingInterval: null,
-  showRoleReveal: false,
-  gameStarted: false,
+export const useGameStore = create<GameStore>()(
+  persist(
+    (set, get) => ({
+      roomId: null,
+      playerId: null,
+      playerName: null,
+      players: [],
+      phase: null,
+      currentSprint: 0,
+      proposedTeam: [],
+      currentPO: null,
+      myRole: null,
+      isGood: true,
+      saboteurIds: [],
+      smId: null,
+      goodWins: 0,
+      badWins: 0,
+      consecutiveDelays: 0,
+      techLeadPresent: false,
+      qcBugged: false,
+      messages: [],
+      error: null,
+      realtimeChannel: null,
+      pollingInterval: null,
+      showRoleReveal: false,
+      gameStarted: false,
 
   ensurePlayerId: () => {
     let id = get().playerId;
@@ -438,4 +441,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // non-critical, ignore
     }
   },
-}));
+  {
+    name: 'agile-werewolf-store',
+    partialize: (state) => ({
+      playerId: state.playerId,
+      playerName: state.playerName,
+    }),
+  }
+);
