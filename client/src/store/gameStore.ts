@@ -48,6 +48,7 @@ interface RoomState {
   smId: string | null;
   baId: string | null;
   clientId: string | null;
+  votes: Record<string, 'agree' | 'reject'>;
   goodWins: number;
   badWins: number;
   consecutiveDelays: number;
@@ -188,6 +189,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   prevSprintTeam: [],
   prevExecutionVotes: {},
   prevSprintIndex: -1,
+  votes: {},
 
   sprintHistory: [],
   phaseStartedAt: null,
@@ -277,6 +279,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       phase: newPhase,
       currentSprint: room.currentSprint ?? 0,
       proposedTeam: room.proposedTeam || [],
+      votes: (room.votes ?? {}) as Record<string, 'agree' | 'reject'>,
       currentPO:
         typeof room.currentPO === 'number'
           ? (room.players || [])[room.currentPO] || null

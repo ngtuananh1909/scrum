@@ -53,6 +53,7 @@ export default function GamePage() {
     pmDeferredThisSprint,
     ttsFollowTargetId,
     voteAck,
+    votes,
     phaseStartedAt,
     phaseDeadlineAt,
     poSelectDeadlineAt,
@@ -431,14 +432,22 @@ export default function GamePage() {
   const renderTeamVoting = () => {
     const meVoted = !!useGameStore.getState().players.find((p) => p.id === playerId);
     void meVoted;
+    // Open ballots — split alive voters by their current vote (or pending if silenced/not yet voted).
+    const eligibleVoters = players.filter(
+      (p) => p.isAlive && !(deadlineSilenced || sepSilencedPlayerId === p.id)
+    );
+    const agreeVoters = eligibleVoters.filter((p) => votes[p.id] === 'agree');
+    const rejectVoters = eligibleVoters.filter((p) => votes[p.id] === 'reject');
+    const pendingVoters = eligibleVoters.filter((p) => !votes[p.id]);
+    const totalVoted = agreeVoters.length + rejectVoters.length;
     return (
       <div className="space-y-6">
         <div className="glass-panel rounded-xl p-4 sm:p-6 text-center">
           <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">Biểu quyết duyệt nhóm</h2>
-          <p className="text-muted-foreground mb-6 text-sm sm:text-base">
+          <p className="text-muted-foreground mb-4 text-sm sm:text-base">
             {currentPO?.name} đề xuất nhóm cho Sprint {currentSprint + 1}:
           </p>
-          <div className="flex flex-wrap gap-2 sm:gap-3 justify-center mb-6">
+          <div className="flex flex-wrap gap-2 sm:gap-3 justify-center mb-4">
             {proposedTeam.map((id) => (
               <div
                 key={id}
@@ -455,13 +464,31 @@ export default function GamePage() {
               </div>
             ))}
           </div>
+
+          {/* Open ballot counters */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-4 text-xs font-mono">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/15 text-secondary">
+              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: 'FILL 1' }}>thumb_up</span>
+              ĐỒNG Ý {agreeVoters.length}
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error/15 text-error">
+              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: 'FILL 1' }}>thumb_down</span>
+              TỪ CHỐI {rejectVoters.length}
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-muted-foreground">
+              <span className="material-symbols-outlined text-base">hourglass_empty</span>
+              Chờ {pendingVoters.length}
+            </span>
+            <span className="text-muted-foreground">· {totalVoted}/{eligibleVoters.length} đã bỏ phiếu</span>
+          </div>
+
           {isSilenced ? (
-            <p className="text-sm text-error italic">
+            <p className="text-sm text-error italic mb-3">
               Bạn bị cấm biểu quyết trong Sprint này.
             </p>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-sm text-muted-foreground mb-3">
                 Bỏ phiếu của bạn: (timeout 30s → auto Đồng ý)
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -484,6 +511,79 @@ export default function GamePage() {
               </div>
             </>
           )}
+        </div>
+
+        {/* Open ballot — per-player vote indicators */}
+        <div className="glass-panel rounded-xl p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground">
+              Phiếu mở (đang cập nhật)
+            </h3>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              {totalVoted}/{eligibleVoters.length}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {eligibleVoters.map((p) => {
+              const vote = votes[p.id];
+              const isAgree = vote === 'agree';
+              const isReject = vote === 'reject';
+              const accent =
+                isAgree
+                  ? 'border-secondary/60 bg-secondary/10'
+                  : isReject
+                  ? 'border-error/60 bg-error/10'
+                  : 'border-outline bg-surface-container/40';
+              const icon = isAgree
+                ? 'thumb_up'
+                : isReject
+                ? 'thumb_down'
+                : 'hourglass_empty';
+              const label = isAgree
+                ? 'ĐỒNG Ý'
+                : isReject
+                ? 'TỪ CHỐI'
+                : 'Đang chờ';
+              const iconColor = isAgree
+                ? 'text-secondary'
+                : isReject
+                ? 'text-error'
+                : 'text-muted-foreground';
+              return (
+                <div
+                  key={p.id}
+                  className={`rounded-lg p-2 border ${accent} flex items-center gap-2 transition-colors`}
+                >
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-outline bg-surface-container shrink-0 relative">
+                    <img
+                      src={getAvatarUrl(p.name)}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-surface-container flex items-center justify-center ${
+                        isAgree ? 'bg-secondary' : isReject ? 'bg-error' : 'bg-surface-container-high'
+                      }`}
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[10px] ${isAgree || isReject ? 'text-white' : iconColor}`}
+                        style={{ fontVariationSettings: 'FILL 1' }}
+                      >
+                        {icon}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate">
+                      {p.name}
+                      {p.id === playerId && ' (Bạn)'}
+                    </p>
+                    <p className={`text-[10px] font-mono ${iconColor}`}>{label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );

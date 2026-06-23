@@ -526,7 +526,12 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
   room.techLeadPresent = false;
   room.techDebtActive = techDebtOnPrevTeam;
   room.poSelectDeadlineAt = null;
-  // Don't rotate PO yet — that happens when entering planning phase.
+  // Rotate PO to next alive player for the next sprint (per user spec:
+  // "sprint tiếp theo thì lại tiếp tục với người thứ 4..."). This way each
+  // sprint has a different PO unless a reject rotates mid-sprint.
+  do {
+    room.currentPO = (room.currentPO + 1) % room.players.length;
+  } while (!room.players[room.currentPO]?.isAlive);
 }
 
 // Called by client after sprintResult acknowledged OR auto-expired.
