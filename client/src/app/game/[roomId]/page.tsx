@@ -1026,13 +1026,13 @@ export default function GamePage() {
               Sprint {currentSprint + 1}/4
             </span>
             <span className="text-muted-foreground font-mono text-sm">
-              Delays: {consecutiveDelays}/4
+              Delays: {consecutiveDelays}/3
             </span>
           </div>
           {/* Mobile compact stats */}
           <div className="md:hidden flex items-center gap-2 text-xs font-mono">
             <span className="text-secondary">S{currentSprint + 1}/4</span>
-            <span className="text-muted-foreground">D{consecutiveDelays}/4</span>
+            <span className="text-muted-foreground">D{consecutiveDelays}/3</span>
           </div>
         </div>
 

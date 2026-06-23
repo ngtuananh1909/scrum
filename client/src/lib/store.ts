@@ -364,7 +364,7 @@ async function tallyTeamVote(room: Room): Promise<Room> {
       room.currentPO = (room.currentPO + 1) % room.players.length;
     } while (!room.players[room.currentPO]?.isAlive);
 
-    if (room.consecutiveDelays >= 4) {
+    if (room.consecutiveDelays >= 3) {
       room.phase = 'ended';
       room.phaseDeadlineAt = null;
       room.phaseStartedAt = null;
