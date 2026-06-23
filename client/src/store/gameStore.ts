@@ -1,9 +1,7 @@
 'use client';
 
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { Player, Phase, ChatMessage, Room } from '@/lib/types';
-import { getOrCreatePlayerId } from '@/lib/identity';
+import { create } from 'zustand';import type { Player, Phase, ChatMessage, Room } from '@/lib/types';
+import { getOrCreatePlayerId, getPersistedPlayerName, setPersistedPlayerName } from '@/lib/identity';
 import { getSupabase } from '@/lib/supabaseBrowser';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -62,32 +60,30 @@ interface GameStore extends RoomState {
   }) => void;
 }
 
-export const useGameStore = create<GameStore>()(
-  persist(
-    (set, get) => ({
-      roomId: null,
-      playerId: null,
-      playerName: null,
-      players: [],
-      phase: null,
-      currentSprint: 0,
-      proposedTeam: [],
-      currentPO: null,
-      myRole: null,
-      isGood: true,
-      saboteurIds: [],
-      smId: null,
-      goodWins: 0,
-      badWins: 0,
-      consecutiveDelays: 0,
-      techLeadPresent: false,
-      qcBugged: false,
-      messages: [],
-      error: null,
-      realtimeChannel: null,
-      pollingInterval: null,
-      showRoleReveal: false,
-      gameStarted: false,
+export const useGameStore = create<GameStore>((set, get) => ({
+  roomId: null,
+  playerId: null,
+  playerName: null,
+  players: [],
+  phase: null,
+  currentSprint: 0,
+  proposedTeam: [],
+  currentPO: null,
+  myRole: null,
+  isGood: true,
+  saboteurIds: [],
+  smId: null,
+  goodWins: 0,
+  badWins: 0,
+  consecutiveDelays: 0,
+  techLeadPresent: false,
+  qcBugged: false,
+  messages: [],
+  error: null,
+  realtimeChannel: null,
+  pollingInterval: null,
+  showRoleReveal: false,
+  gameStarted: false,
 
   ensurePlayerId: () => {
     let id = get().playerId;
@@ -146,7 +142,8 @@ export const useGameStore = create<GameStore>()(
       }
       const data = await res.json();
       set({ roomId: data.roomId, playerId: data.playerId, playerName, gameStarted: false, showRoleReveal: false });
-	      get().setRoomFromResponse(data);
+      setPersistedPlayerName(playerName);
+      get().setRoomFromResponse(data);
       get().subscribeToRoom();
     } catch (error) {
       console.error('[createRoom]', error);
@@ -441,11 +438,4 @@ export const useGameStore = create<GameStore>()(
       // non-critical, ignore
     }
   },
-  {
-    name: 'agile-werewolf-store',
-    partialize: (state) => ({
-      playerId: state.playerId,
-      playerName: state.playerName,
-    }),
-  }
-);
+}));
