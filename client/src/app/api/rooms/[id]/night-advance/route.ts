@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { nightAdvance } from '@/lib/store';
+import { nightAdvance, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -15,7 +15,7 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot advance from night' }, { status: 400 });
     }
 
-    return NextResponse.json({ room });
+    return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId || null) });
   } catch (error) {
     console.error('[api/rooms/[id]/night-advance POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

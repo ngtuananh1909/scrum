@@ -142,7 +142,7 @@ export function RoleConfigCounter({
           disabled={!startEnabled}
           className={`flex-1 py-3 rounded-lg font-semibold tracking-wide text-sm uppercase ${
             startEnabled
-              ? 'bg-primary-container text-primary-foreground border border-primary/50 shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:shadow-[0_0_25px_rgba(99,102,241,0.6)]'
+              ? 'bg-primary-container text-primary-foreground border border-primary/50 shadow-[0_0_15px_var(--row-glow-primary)] hover:shadow-[0_0_25px_var(--row-glow-primary)]'
               : 'bg-surface-container-high text-muted-foreground border border-outline opacity-50 cursor-not-allowed'
           }`}
         >

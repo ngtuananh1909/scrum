@@ -1,5 +1,14 @@
 import { supabaseAdmin } from './supabase';
-import type { Room, Player, Phase, Vote, PlayerRole, SprintHistoryEntry } from './types';
+import type {
+  Room,
+  Player,
+  Phase,
+  Vote,
+  PlayerRole,
+  SprintHistoryEntry,
+  GameLogEntry,
+  GameLogCategory,
+} from './types';
 import {
   assignRoles,
   assignSelectedRoles,
@@ -12,6 +21,40 @@ import {
   ttsMultiplier,
   shuffleArray,
 } from './types';
+
+// Cap persisted log entries so the JSONB blob stays small across many resets.
+const MAX_GAME_LOG_ENTRIES = 100;
+
+let logCounter = 0;
+function newLogId(): string {
+  logCounter = (logCounter + 1) % 1_000_000;
+  return `${Date.now().toString(36)}-${logCounter.toString(36)}`;
+}
+
+// Append a single log entry. Caps the array to the most recent N entries.
+function appendLog(
+  room: Room,
+  category: GameLogCategory,
+  text: string,
+  tone?: GameLogEntry['tone']
+): void {
+  const entry: GameLogEntry = {
+    id: newLogId(),
+    category,
+    text,
+    timestamp: Date.now(),
+    tone,
+  };
+  const next = [...(room.gameLog ?? []), entry];
+  room.gameLog =
+    next.length > MAX_GAME_LOG_ENTRIES
+      ? next.slice(next.length - MAX_GAME_LOG_ENTRIES)
+      : next;
+}
+
+function nameOf(room: Room, playerId: string): string {
+  return room.players.find((p) => p.id === playerId)?.name ?? 'Unknown';
+}
 
 // ===== Supabase-backed room storage =====
 // Each game is one row in public.rooms. State is a JSONB blob matching the Room interface.
@@ -54,6 +97,7 @@ function normalizeRoom(room: Room): Room {
     pmDeferredThisSprint: room.pmDeferredThisSprint ?? false,
     clientId: room.clientId ?? null,
     poSelectDeadlineAt: room.poSelectDeadlineAt ?? null,
+    gameLog: room.gameLog ?? [],
   };
 }
 
@@ -120,9 +164,11 @@ export async function createRoom(
     pmDeferredThisSprint: false,
     clientId: null,
     poSelectDeadlineAt: null,
+    gameLog: [],
     lastUpdated: Date.now(),
   };
 
+  appendLog(room, 'system', `Phòng ${room.id} được tạo bởi ${playerName}.`);
   await writeRoom(room);
   return { room, player };
 }
@@ -154,6 +200,7 @@ export async function joinRoom(
 
   const player: Player = { id: playerId, name: playerName, isAlive: true };
   room.players.push(player);
+  appendLog(room, 'system', `${playerName} đã tham gia phòng.`);
   await writeRoom(room);
   return { room, player };
 }
@@ -195,6 +242,7 @@ export async function startGame(
   const client = room.players.find((p) => p.role === 'Client');
   room.clientId = client?.id ?? null;
 
+  appendLog(room, 'phase', `Game bắt đầu — ${room.players.length} người chơi, vào Giờ Tan Ca.`, 'neutral');
   await writeRoom(room);
 
   return buildRoleInfo(room, playerId);
@@ -264,6 +312,14 @@ export async function nightZeroComplete(
 
   room.ttsFollowTargetId = ttsTargetId;
 
+  appendLog(
+    room,
+    'skill',
+    ttsTargetId
+      ? `Thực tập sinh ${nameOf(room, playerId)} chọn theo sát ${nameOf(room, ttsTargetId)} (x2 phiếu từ Sprint 2).`
+      : `Thực tập sinh ${nameOf(room, playerId)} bỏ qua chọn target.`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -293,6 +349,14 @@ export async function proposeTeam(
   room.phaseStartedAt = now;
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.teamVoteMs;
   room.poSelectDeadlineAt = null;
+
+  const teamNames = playerIds.map((id) => nameOf(room, id)).join(', ');
+  appendLog(
+    room,
+    'phase',
+    `Sprint ${room.currentSprint + 1}: ${PO.name} đề xuất nhóm (${expectedSize} người): ${teamNames}.`,
+    'neutral'
+  );
 
   await writeRoom(room);
   return room;
@@ -359,6 +423,12 @@ async function tallyTeamVote(room: Room): Promise<Room> {
       const p = findPlayer(room, id);
       return p && p.role === 'Technical Leader';
     });
+    appendLog(
+      room,
+      'vote',
+      `Biểu quyết duyệt nhóm: ĐỒNG Ý (${agreeWeight}-${rejectWeight}) → vào Thực thi.`,
+      'good'
+    );
   } else {
     room.consecutiveDelays++;
     // Rotate PO to next alive player.
@@ -371,6 +441,12 @@ async function tallyTeamVote(room: Room): Promise<Room> {
       room.phaseDeadlineAt = null;
       room.phaseStartedAt = null;
       room.badWins = Math.max(room.badWins, 2);
+      appendLog(
+        room,
+        'sprint',
+        `Delay thứ ${room.consecutiveDelays} liên tiếp — phe Phá Dự Án thắng!`,
+        'bad'
+      );
       await writeRoom(room);
       return room;
     }
@@ -385,6 +461,12 @@ async function tallyTeamVote(room: Room): Promise<Room> {
     room.sepSilencedPlayerId = null;
     room.deadlineSilenced = false;
     room.pmDeferredThisSprint = false;
+    appendLog(
+      room,
+      'vote',
+      `Biểu quyết duyệt nhóm: TỪ CHỐI (${agreeWeight}-${rejectWeight}) — delay thứ ${room.consecutiveDelays}.`,
+      'bad'
+    );
   }
 
   await writeRoom(room);
@@ -479,6 +561,34 @@ async function tallyExecutionVote(room: Room): Promise<Room> {
   };
   room.sprintHistory = [...(room.sprintHistory ?? []), historyEntry];
 
+  const sprintIdx = room.currentSprint + 1;
+  const teamSummary = room.proposedTeam.map((id) => nameOf(room, id)).join(', ');
+  const tlSaved = !sprintFailed && room.techLeadPresent && fails === 1;
+  appendLog(
+    room,
+    'sprint',
+    sprintFailed
+      ? `Sprint ${sprintIdx} CHÁY DEADLINE (${fails} fail) — Tỉ số: Tốt ${room.goodWins} / Xấu ${room.badWins}. Team: ${teamSummary}.`
+      : `Sprint ${sprintIdx} HOÀN THÀNH (${success} success) — Tỉ số: Tốt ${room.goodWins} / Xấu ${room.badWins}. Team: ${teamSummary}.`,
+    sprintFailed ? 'bad' : 'good'
+  );
+  if (tlSaved) {
+    appendLog(
+      room,
+      'skill',
+      `Technical Leader vô hiệu hóa 1 fail — Sprint ${sprintIdx} được cứu.`,
+      'good'
+    );
+  }
+  if (tdOnTeam) {
+    appendLog(
+      room,
+      'skill',
+      `Technical Debt đã tham gia Sprint ${sprintIdx} — Sprint sau +1 người.`,
+      'bad'
+    );
+  }
+
   room.currentSprint++;
   transitionAfterResult(room, tdOnTeam);
 
@@ -496,6 +606,7 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
     room.phase = 'ended';
     room.phaseStartedAt = now;
     room.phaseDeadlineAt = null;
+    appendLog(room, 'sprint', `Phe Phá Dự Án thắng (≥2 fail)!`, 'bad');
     return;
   }
   // Terminal: good team reached 3 wins → enter discussion (assassination).
@@ -503,6 +614,12 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
     room.phase = 'discussion';
     room.phaseStartedAt = now;
     room.phaseDeadlineAt = now + TIMER_DEFAULTS.assassinationMs;
+    appendLog(
+      room,
+      'phase',
+      'Scrum Team đạt 3 sprint — vào vòng thảo luận lật kèo (60s).',
+      'neutral'
+    );
     return;
   }
   // Terminal: ran out of sprints.
@@ -510,6 +627,7 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
     room.phase = 'ended';
     room.phaseStartedAt = now;
     room.phaseDeadlineAt = null;
+    appendLog(room, 'sprint', `Hết 4 sprint — game kết thúc.`, 'neutral');
     return;
   }
 
@@ -548,6 +666,12 @@ export async function advanceFromSprintResult(roomId: string, playerId?: string)
   room.phaseStartedAt = now;
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.discussionMs;
 
+  appendLog(
+    room,
+    'phase',
+    `Sprint ${room.currentSprint} kết thúc — vào bàn luận 90s trước Giờ Tan Ca.`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -567,6 +691,12 @@ export async function advanceFromDiscussion(roomId: string, playerId?: string): 
   room.phaseDeadlineAt =
     now + (room.currentSprint === 0 ? TIMER_DEFAULTS.nightFirstMs : TIMER_DEFAULTS.nightRecurringMs);
 
+  appendLog(
+    room,
+    'phase',
+    `Sprint ${room.currentSprint + 1}: vào Giờ Tan Ca (skill window).`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -601,6 +731,13 @@ export async function nightAdvance(roomId: string, playerId?: string): Promise<R
   room.pmDeferredThisSprint = false;
   // TTS follow target persists across rounds; do not reset here.
 
+  const poName = nameOf(room, room.players[room.currentPO]?.id ?? '');
+  appendLog(
+    room,
+    'phase',
+    `Sprint ${room.currentSprint + 1}: vào ca — ${poName} chuẩn bị đề xuất nhóm.`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -645,6 +782,12 @@ export async function autoAdvancePhase(roomId: string): Promise<Room | null> {
       // Auto-end discussion (no saboteur-guess was made in time).
       room.phase = 'ended';
       room.phaseDeadlineAt = null;
+      appendLog(
+        room,
+        'phase',
+        'Hết thời gian thảo luận lật kèo — Scrum Team thắng!',
+        'good'
+      );
       await writeRoom(room);
       return room;
     default:
@@ -690,6 +833,14 @@ export async function saboteurGuess(
     // Bad team flips the win — set badWins so client win detection picks it up.
     room.badWins = Math.max(room.badWins, 2);
   }
+  appendLog(
+    room,
+    'sprint',
+    correct
+      ? `Lật kèo THÀNH CÔNG — ${nameOf(room, playerId)} chỉ điểm đúng Scrum Master. Phe Phá Dự Án thắng!`
+      : `Lật kèo THẤT BẠI — ${nameOf(room, playerId)} chỉ nhầm ${nameOf(room, guessedSmId)}. Scrum Team thắng!`,
+    correct ? 'bad' : 'good'
+  );
   await writeRoom(room);
 
   return { winner: correct ? 'bad' : 'good', correct, room };
@@ -728,6 +879,13 @@ export async function skillPmOverride(
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.executionVoteMs;
   room.poSelectDeadlineAt = null;
 
+  const team = playerIds.map((id) => nameOf(room, id)).join(', ');
+  appendLog(
+    room,
+    'skill',
+    `PM Override — ${nameOf(room, playerId)} chỉ định nhóm (${playerIds.length} người) bỏ qua biểu quyết: ${team}.`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -782,6 +940,12 @@ export async function skillBusinessAnalystCheck(
   const anyBad = isEffectivelyBad(targetA) || isEffectivelyBad(targetB);
 
   room.businessAnalystCheckUsed = true;
+  appendLog(
+    room,
+    'skill',
+    `Business Analyst ${nameOf(room, playerId)} kiểm tra ${nameOf(room, a)} & ${nameOf(room, b)} — kết quả: ${anyBad ? 'Yes' : 'No'}.`,
+    'neutral'
+  );
   await writeRoom(room);
 
   return { room, private: { result: anyBad ? 'Yes' : 'No' } };
@@ -848,6 +1012,12 @@ export async function skillQcRedo(
     room.sprintHistory = room.sprintHistory.slice(0, -1);
   }
 
+  appendLog(
+    room,
+    'skill',
+    `QC Redo — ${nameOf(room, playerId)} yêu cầu làm lại Sprint ${prevIdx + 1}. Quay về Planning.`,
+    'neutral'
+  );
   await writeRoom(room);
   return room;
 }
@@ -879,6 +1049,12 @@ export async function skillDataAnalystCheck(
   if (v !== 'success' && v !== 'fail') return null;
 
   room.dataAnalystCheckUsed = true;
+  appendLog(
+    room,
+    'skill',
+    `Data Analyst ${nameOf(room, playerId)} kiểm tra phiếu của ${nameOf(room, targetId)} (Sprint ${room.prevSprintIndex + 1}) — kết quả: ${v === 'success' ? 'Hoàn thành' : 'Cháy deadline'}.`,
+    'neutral'
+  );
   await writeRoom(room);
 
   return { room, private: { result: v, targetId } };
@@ -903,6 +1079,12 @@ export async function skillSepSilence(
   if (!target) return null;
 
   room.sepSilencedPlayerId = targetId;
+  appendLog(
+    room,
+    'skill',
+    `Sếp khó ưa ${nameOf(room, playerId)} khóa miệng ${nameOf(room, targetId)} trong Sprint này.`,
+    'bad'
+  );
   await writeRoom(room);
   return room;
 }
@@ -923,6 +1105,12 @@ export async function skillDeadlineSilence(
 
   room.deadlineUsed = true;
   room.deadlineSilenced = true;
+  appendLog(
+    room,
+    'skill',
+    `Deadline kích hoạt — ${nameOf(room, playerId)} cấm chat toàn bộ team trong Sprint này.`,
+    'bad'
+  );
   await writeRoom(room);
   return room;
 }
@@ -930,6 +1118,68 @@ export async function skillDeadlineSilence(
 // Poll-based sync for client (fallback when Realtime unavailable)
 export async function pollRoom(roomId: string): Promise<Room | null> {
   return readRoom(roomId);
+}
+
+// ===== Room reset (end-of-game → back to lobby) =====
+// Keeps the player roster; wipes gameplay state so the same room can host
+// a fresh match. Allowed from any phase (typically called from `ended`).
+export async function resetRoom(roomId: string, playerId: string): Promise<Room | null> {
+  const room = await readRoom(roomId);
+  if (!room) return null;
+  // Caller must be a current member of the room.
+  if (!findPlayer(room, playerId)) return null;
+
+  // Preserve player list + identities, reset everything else.
+  room.phase = 'lobby';
+  room.currentPO = 0;
+  room.currentSprint = 0;
+  room.proposedTeam = [];
+  room.votes = {};
+  room.executionVotes = {};
+  room.consecutiveDelays = 0;
+  room.goodWins = 0;
+  room.badWins = 0;
+  room.saboteurGuess = null;
+  room.pmOverrideUsed = false;
+  room.dataAnalystCheckUsed = false;
+  room.businessAnalystCheckUsed = false;
+  room.qcRedoUsed = false;
+  room.deadlineUsed = false;
+  room.sepSilencedPlayerId = null;
+  room.deadlineSilenced = false;
+  room.techDebtActive = false;
+  room.techLeadPresent = false;
+  room.ttsFollowTargetId = null;
+  room.prevSprintTeam = [];
+  room.prevExecutionVotes = {};
+  room.prevSprintIndex = -1;
+  room.sprintHistory = [];
+  room.phaseStartedAt = null;
+  room.phaseDeadlineAt = null;
+  room.pmDeferredThisSprint = false;
+  room.clientId = null;
+  room.poSelectDeadlineAt = null;
+  // Clear per-player role + revive anyone marked dead.
+  for (const p of room.players) {
+    p.role = undefined as unknown as PlayerRole;
+    p.isAlive = true;
+  }
+  // Re-pick the first alive player as PO (in case index 0 was killed mid-game).
+  if (!room.players[room.currentPO]?.isAlive) {
+    const firstAlive = room.players.findIndex((p) => p.isAlive);
+    room.currentPO = firstAlive >= 0 ? firstAlive : 0;
+  }
+  // Wipe log so the new game starts with a clean timeline.
+  room.gameLog = [];
+  appendLog(
+    room,
+    'system',
+    `Phòng reset bởi ${nameOf(room, playerId)} — bắt đầu ván mới.`,
+    'neutral'
+  );
+
+  await writeRoom(room);
+  return room;
 }
 
 // ===== Player self-service =====
@@ -955,3 +1205,63 @@ export async function renamePlayer(
 
 // Re-exports for tests (kept for backwards compat with route handlers).
 export type { Phase, Vote, PlayerRole };
+
+// ===== Information disclosure control =====
+// Each player must only see roles their role is allowed to know.
+// This prevents DevTools / Network-tab / sessionStorage cache leaks of
+// other players' roles. Default rule: strip role on every player except
+// the viewer; allow-list specific reveals per game rules.
+//
+// Reveal rules:
+//   - Viewer always sees their own role.
+//   - 'Scrum Master' sees ALL roles (must identify bad team from start).
+//   - 'Người trễ task' sees other saboteurs' roles.
+//   - 'Client' sees 'Business Analyst' role.
+//   - 'Business Analyst' sees 'Client' role.
+//   - During 'ended' phase, everyone sees everything (game over reveal).
+//   - 'lobby' / 'night' of the first turn: only viewer (other roles not assigned yet).
+//
+// Pass `null` for viewerId to strip all roles (e.g. unauthenticated GET).
+export function sanitizeRoomForPlayer<T extends Room>(room: T, viewerId: string | null): T {
+  const cloned: T = {
+    ...room,
+    players: room.players.map((p) => ({ ...p })),
+  };
+
+  if (!viewerId) {
+    // Anonymous viewer: strip everything.
+    for (const p of cloned.players) delete (p as { role?: PlayerRole }).role;
+    return cloned;
+  }
+
+  const viewer = cloned.players.find((p) => p.id === viewerId);
+  const viewerRole = viewer?.role as PlayerRole | undefined;
+  const revealAll = cloned.phase === 'ended';
+
+  // Build a set of playerIds whose role the viewer is allowed to see.
+  const allowed = new Set<string>([viewerId]);
+  if (revealAll) {
+    for (const p of cloned.players) allowed.add(p.id);
+  } else if (viewerRole === 'Scrum Master') {
+    for (const p of cloned.players) allowed.add(p.id);
+  } else if (viewerRole === 'Người trễ task') {
+    for (const p of cloned.players) {
+      if (p.role === 'Người trễ task') allowed.add(p.id);
+    }
+  } else if (viewerRole === 'Client') {
+    for (const p of cloned.players) {
+      if (p.role === 'Business Analyst') allowed.add(p.id);
+    }
+  } else if (viewerRole === 'Business Analyst') {
+    for (const p of cloned.players) {
+      if (p.role === 'Client') allowed.add(p.id);
+    }
+  }
+
+  for (const p of cloned.players) {
+    if (!allowed.has(p.id)) {
+      delete (p as { role?: PlayerRole }).role;
+    }
+  }
+  return cloned;
+}

@@ -9,7 +9,9 @@ import type {
   RoleConfig,
   PlayerRole,
   SprintHistoryEntry,
+  GameLogEntry,
 } from '@/lib/types';
+import { sanitizeRoomForViewer } from '@/lib/types';
 import {
   getOrCreatePlayerId,
   getPersistedPlayerName,
@@ -70,6 +72,7 @@ interface RoomState {
 
   // New phase-flow state
   sprintHistory: SprintHistoryEntry[];
+  gameLog: GameLogEntry[];
   phaseStartedAt: number | null;
   phaseDeadlineAt: number | null;
   poSelectDeadlineAt: number | null;
@@ -142,6 +145,8 @@ interface GameStore extends RoomState {
   clearError: () => void;
   closeRoleReveal: () => void;
   resetRoleReveal: () => Promise<void>;
+  resetRoom: () => Promise<void>;
+  leaveRoom: () => void;
   setRoomFromResponse: (data: {
     room: Room;
     playerId?: string;
@@ -193,6 +198,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   votes: {},
 
   sprintHistory: [],
+  gameLog: [],
   phaseStartedAt: null,
   phaseDeadlineAt: null,
   poSelectDeadlineAt: null,
@@ -243,9 +249,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { room, playerId, role, isGood, saboteurIds, smId, baId, clientId } = data;
     const myPlayerId = playerId || get().playerId;
     const ownPlayer = myPlayerId ? (room.players || []).find((p) => p.id === myPlayerId) : null;
-    const resolvedRole = role || ownPlayer?.role || get().myRole || null;
+    // After a room reset the server returns players with no `role` field.
+    // Force-clear myRole + auxiliary reveal state so the sidebar doesn't
+    // show a stale role from the previous game.
+    const isLobbyReset = room.phase === 'lobby' && !ownPlayer?.role;
+    const resolvedRole = isLobbyReset
+      ? null
+      : role || ownPlayer?.role || get().myRole || null;
     const resolvedIsGood =
-      isGood !== undefined
+      isLobbyReset
+        ? true
+        : isGood !== undefined
         ? isGood
         : resolvedRole
         ? !['Người trễ task', 'Client', 'Ông sếp khó ưa', 'Kẻ fake CV', 'QC cẩu thả', 'Deadline', 'Technical Debt'].includes(resolvedRole)
@@ -304,6 +318,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       prevSprintIndex: room.prevSprintIndex ?? -1,
 
       sprintHistory: room.sprintHistory ?? [],
+      gameLog: room.gameLog ?? [],
       phaseStartedAt: room.phaseStartedAt ?? null,
       phaseDeadlineAt: room.phaseDeadlineAt ?? null,
       poSelectDeadlineAt: room.poSelectDeadlineAt ?? null,
@@ -313,12 +328,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       nightZeroSeen,
 
       ...(playerId ? { playerId } : {}),
-      ...(resolvedRole ? { myRole: resolvedRole } : {}),
-      ...(resolvedIsGood !== undefined ? { isGood: resolvedIsGood } : {}),
-      ...(saboteurIds ? { saboteurIds } : {}),
-      ...(smId !== undefined ? { smId } : {}),
-      ...(baId !== undefined ? { baId } : {}),
-      ...(clientId !== undefined ? { clientId } : {}),
+      ...(isLobbyReset
+        ? { myRole: null, isGood: true, saboteurIds: [], smId: null, baId: null, clientId: null, gameStarted: false, showRoleReveal: false }
+        : {
+            ...(resolvedRole ? { myRole: resolvedRole } : {}),
+            ...(resolvedIsGood !== undefined ? { isGood: resolvedIsGood } : {}),
+            ...(saboteurIds ? { saboteurIds } : {}),
+            ...(smId !== undefined ? { smId } : {}),
+            ...(baId !== undefined ? { baId } : {}),
+            ...(clientId !== undefined ? { clientId } : {}),
+          }),
       ...(wasNotStarted && isPostLobby && hasRole && !get().showRoleReveal && previousPhase === null
         ? { showRoleReveal: true, gameStarted: true }
         : {}),
@@ -327,8 +346,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // Write-through cache for instant reload hydration.
     const after = get();
     if (room.id) {
+      // Belt-and-suspenders: even if the caller forgot to sanitize, ensure
+      // the cached snapshot only contains roles the viewer is allowed to see.
+      const safeRoom = sanitizeRoomForViewer(room, after.playerId);
       setCachedRoom(room.id, {
-        room,
+        room: safeRoom,
         myRole: after.myRole,
         isGood: after.isGood,
         saboteurIds: after.saboteurIds,
@@ -899,7 +921,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
           filter: `id=eq.${roomId}`,
         },
         (payload) => {
-          const room = (payload.new as { state: Room }).state;
+          const rawRoom = (payload.new as { state: Room }).state;
+          // Supabase broadcasts the full state column — strip other players'
+          // roles to prevent DevTools / network tab from leaking the entire
+          // game state. Server already sanitizes API responses, but realtime
+          // bypasses those endpoints.
+          const viewerId = get().playerId;
+          const room = sanitizeRoomForViewer(rawRoom, viewerId);
           get().setRoomFromResponse({ room });
         }
       )
@@ -938,6 +966,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const res = await fetch(`${API_URL}/api/rooms/${roomId}`);
         if (res.ok) {
           const data = await res.json();
+          // Server already sanitizes GET (no viewerId → all roles stripped).
+          // setRoomFromResponse is a no-op on roles, but the cache write below
+          // would persist them, so we still pass an empty role set.
           get().setRoomFromResponse(data);
         }
       } catch {}
@@ -978,6 +1009,96 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch {
       // no-op
     }
+  },
+
+  // End-of-game → reset the SAME room back to lobby. Host or any member
+  // can trigger. Returns the new room state; client re-renders lobby.
+  resetRoom: async () => {
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        set({ error: data.error || 'Failed to reset room' });
+        return;
+      }
+      const data = await res.json();
+      if (data?.room) {
+        // Wipe local role/skill state — the room is fresh.
+        set({
+          myRole: null,
+          isGood: true,
+          saboteurIds: [],
+          smId: null,
+          baId: null,
+          clientId: null,
+          showRoleReveal: false,
+          gameStarted: false,
+          nightZeroSeen: false,
+        });
+        get().setRoomFromResponse({ room: data.room });
+      }
+    } catch (error) {
+      console.error('[resetRoom]', error);
+      set({ error: 'Network error' });
+    }
+  },
+
+  // Local cleanup before navigating to lobby/home. No server call needed —
+  // the player just stops listening. They remain in the room's player list
+  // (server keeps the UUID) so they can rejoin the same room later.
+  leaveRoom: () => {
+    get().unsubscribeFromRoom();
+    if (get().roomId) clearCachedRoom(get().roomId!);
+    set({
+      roomId: null,
+      playerId: null,
+      players: [],
+      phase: null,
+      currentSprint: 0,
+      proposedTeam: [],
+      currentPO: null,
+      myRole: null,
+      isGood: true,
+      saboteurIds: [],
+      smId: null,
+      baId: null,
+      clientId: null,
+      goodWins: 0,
+      badWins: 0,
+      consecutiveDelays: 0,
+      techLeadPresent: false,
+      pmOverrideUsed: false,
+      dataAnalystCheckUsed: false,
+      businessAnalystCheckUsed: false,
+      qcRedoUsed: false,
+      sepSilencedPlayerId: null,
+      deadlineSilenced: false,
+      ttsFollowTargetId: null,
+      techDebtActive: false,
+      pmDeferredThisSprint: false,
+      prevSprintTeam: [],
+      prevExecutionVotes: {},
+      prevSprintIndex: -1,
+      votes: {},
+      sprintHistory: [],
+      gameLog: [],
+      phaseStartedAt: null,
+      phaseDeadlineAt: null,
+      poSelectDeadlineAt: null,
+      phaseRemainingMs: 0,
+      showRoleReveal: false,
+      gameStarted: false,
+      nightZeroSeen: false,
+      messages: [],
+      voteAck: null,
+      privateSkillResults: { ...initialPrivate },
+    });
   },
 }));
 

@@ -130,13 +130,13 @@ export function SkillFab() {
             <button
               key={b.key}
               onClick={() => setActive(b.key)}
-              className={`group flex items-center gap-2 pl-3 pr-4 py-2 rounded-full ${accentBg} shadow-[0_4px_20px_rgba(0,0,0,0.4)] hover:scale-105 transition-transform`}
+              className={`group flex items-center gap-2 pl-3 pr-4 py-2 rounded-full ${accentBg} shadow-[0_4px_20px_var(--toast-shadow)] hover:scale-105 transition-transform`}
             >
               <span className="material-symbols-outlined">{b.icon}</span>
               <span className="text-xs font-mono uppercase tracking-wider font-semibold">
                 {b.label}
               </span>
-              <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-white">
+              <span className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded tag-chip">
                 {b.cooldown}
               </span>
             </button>

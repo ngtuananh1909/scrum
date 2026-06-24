@@ -24,7 +24,7 @@ export function RoleRevealPopup() {
   const bgColor = isGood
     ? 'from-secondary/20 to-secondary/5 border-secondary/30'
     : 'from-error/20 to-error/5 border-error/30';
-  const glowColor = isGood ? 'shadow-[0_0_30px_rgba(74,225,118,0.3)]' : 'shadow-[0_0_30px_rgba(239,68,68,0.3)]';
+  const glowColor = isGood ? 'shadow-[0_0_30px_var(--row-glow-secondary)]' : 'shadow-[0_0_30px_var(--row-glow-error)]';
 
   return (
     <Dialog open={showRoleReveal} onOpenChange={(open) => !open && closeRoleReveal()}>

@@ -34,7 +34,7 @@ export function SkillResultToast() {
         <div
           className={`glass-panel rounded-xl p-4 border-2 ${
             baResult === 'Yes' ? 'border-error bg-error/10' : 'border-secondary bg-secondary/10'
-          } shadow-[0_0_30px_rgba(0,0,0,0.4)]`}
+          } shadow-[0_0_30px_var(--toast-shadow)]`}
         >
           <div className="flex items-start gap-3">
             <span className="material-symbols-outlined text-2xl text-primary">search_check</span>
@@ -69,7 +69,7 @@ export function SkillResultToast() {
         <div
           className={`glass-panel rounded-xl p-4 border-2 ${
             daResult.result === 'fail' ? 'border-error bg-error/10' : 'border-secondary bg-secondary/10'
-          } shadow-[0_0_30px_rgba(0,0,0,0.4)]`}
+          } shadow-[0_0_30px_var(--toast-shadow)]`}
         >
           <div className="flex items-start gap-3">
             <span className="material-symbols-outlined text-2xl text-primary">analytics</span>

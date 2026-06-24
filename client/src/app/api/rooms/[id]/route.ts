@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRoom } from '@/lib/store';
+import { getRoom, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function GET(
   request: Request,
@@ -13,7 +13,9 @@ export async function GET(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ room });
+    // GET has no authenticated viewer; strip every role.
+    const safeRoom = sanitizeRoomForPlayer(room, null);
+    return NextResponse.json({ room: safeRoom });
   } catch (error) {
     console.error('[api/rooms/[id] GET]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

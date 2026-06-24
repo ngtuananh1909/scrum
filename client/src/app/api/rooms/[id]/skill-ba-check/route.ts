@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { skillBusinessAnalystCheck } from '@/lib/store';
+import { skillBusinessAnalystCheck, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -28,8 +28,10 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot use BA check' }, { status: 400 });
     }
 
-    // Private result returned ONLY in this response — never stored in room.state.
-    return NextResponse.json({ room: result.room, result: result.private.result });
+    return NextResponse.json({
+      room: sanitizeRoomForPlayer(result.room, playerId),
+      result: result.private.result,
+    });
   } catch (error) {
     console.error('[api/rooms/[id]/skill-ba-check POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

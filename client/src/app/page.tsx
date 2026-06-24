@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function Lobby() {
   return (
@@ -73,6 +74,11 @@ function LobbyInner() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      {/* Theme toggle — top right */}
+      <div className="fixed top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+
       {/* Background radial gradients */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_50%,rgba(99,102,241,0.08),transparent_40%)]" />
@@ -84,9 +90,11 @@ function LobbyInner() {
         <div className="glass-panel rounded-xl p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold tracking-tight text-primary mb-1" style={{ fontFamily: 'var(--font-sans)' }}>
-              AGILE WEREWOLF
-            </h1>
+            <img
+              src="/brand/logo-wordmark.svg"
+              alt="Say Agile One More Time"
+              className="h-12 mx-auto mb-2 dark:invert-0"
+            />
             <p className="text-sm text-muted-foreground font-mono">
               Real-time social deduction
             </p>
@@ -106,10 +114,15 @@ function LobbyInner() {
           <div className="space-y-5">
             {/* Player name */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+              <label
+                htmlFor="player-name"
+                className="text-xs font-semibold tracking-widest uppercase text-muted-foreground"
+              >
                 Your Name
               </label>
               <Input
+                id="player-name"
+                name="playerName"
                 placeholder="Enter your name"
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
@@ -120,11 +133,16 @@ function LobbyInner() {
 
             {/* Room code */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+              <label
+                htmlFor="room-code"
+                className="text-xs font-semibold tracking-widest uppercase text-muted-foreground"
+              >
                 Room Code
               </label>
               <div className="flex gap-2">
                 <Input
+                  id="room-code"
+                  name="roomCode"
                   placeholder="Enter room code"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value.toUpperCase())}

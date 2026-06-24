@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { MobileDrawer } from '@/components/MobileDrawer';
 import { TimerBar } from '@/components/TimerBar';
 import { VoteFeedback } from '@/components/VoteFeedback';
 import { SprintHistory } from '@/components/SprintHistory';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { getSprintSize, ROLE_DESCRIPTIONS, TIMER_DEFAULTS, type PlayerRole } from '@/lib/types';
 import { getAvatarUrl } from '@/lib/utils';
 
@@ -60,6 +61,7 @@ export default function GamePage() {
     poSelectDeadlineAt,
     phaseRemainingMs,
     sprintHistory,
+    gameLog,
     proposeTeam,
     voteTeam,
     voteExecution,
@@ -73,6 +75,8 @@ export default function GamePage() {
     hydrateFromCache,
     ensurePlayerId,
     setRoomFromResponse,
+    resetRoom,
+    leaveRoom,
     playerId,
     roomId: storeRoomId,
     playerName,
@@ -90,7 +94,12 @@ export default function GamePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   const [renameBusy, setRenameBusy] = useState(false);
+  const [endModalOpen, setEndModalOpen] = useState(true);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const API_URL_FALLBACK = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -118,6 +127,21 @@ export default function GamePage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (chatTab === 'logs') {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatTab, gameLog.length]);
+
+  // Auto-open end-of-game modal whenever the room enters the `ended` phase.
+  useEffect(() => {
+    if (phase === 'ended') {
+      setEndModalOpen(true);
+    } else {
+      setEndModalOpen(false);
+    }
+  }, [phase]);
 
   const isPO = currentPO?.id === playerId;
   const isOnTeam = proposedTeam.includes(playerId || '');
@@ -194,6 +218,33 @@ export default function GamePage() {
     } finally {
       setRenameBusy(false);
     }
+  };
+
+  // "Về lobby" — reset the same room. Modal closes when phase leaves 'ended'.
+  const handleResetRoom = async () => {
+    if (resetBusy) return;
+    setResetBusy(true);
+    try {
+      await resetRoom();
+      // resetRoom updates phase to 'lobby' via setRoomFromResponse; the
+      // effect above will then close the modal automatically.
+    } catch (err) {
+      console.error('[resetRoom]', err);
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  // "Tìm phòng khác" — confirm first, then leave and route home.
+  const handleRequestLeave = () => {
+    setLeaveConfirmOpen(true);
+  };
+
+  const handleConfirmLeave = () => {
+    leaveRoom();
+    setLeaveConfirmOpen(false);
+    setEndModalOpen(false);
+    router.push('/');
   };
 
   // ─── Sprint Progress Bar ───
@@ -399,7 +450,7 @@ export default function GamePage() {
               <Button
                 onClick={handlePropose}
                 disabled={selectedPlayers.length !== requiredSize}
-                className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-8 py-3 rounded-lg font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-8 py-3 rounded-lg font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined mr-2">groups</span>
                 ĐỀ XUẤT NHÓM
@@ -497,7 +548,7 @@ export default function GamePage() {
                 <Button
                   onClick={() => voteTeam('agree')}
                   disabled={voteAck?.phase === 'teamVoting'}
-                  className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)] disabled:opacity-50"
+                  className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined mr-2">thumb_up</span>
                   ĐỒNG Ý
@@ -568,7 +619,7 @@ export default function GamePage() {
                       }`}
                     >
                       <span
-                        className={`material-symbols-outlined text-[10px] ${isAgree || isReject ? 'text-white' : iconColor}`}
+                        className={`material-symbols-outlined text-[10px] ${isAgree || isReject ? 'on-color' : iconColor}`}
                         style={{ fontVariationSettings: 'FILL 1' }}
                       >
                         {icon}
@@ -635,7 +686,7 @@ export default function GamePage() {
               <Button
                 onClick={() => voteExecution('success')}
                 disabled={voteAck?.phase === 'execution'}
-                className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_rgba(74,225,118,0.2)] disabled:opacity-50"
+                className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-50"
               >
                 <span className="material-symbols-outlined mr-2">check_circle</span>
                 HOÀN THÀNH
@@ -964,10 +1015,9 @@ export default function GamePage() {
             return (
               <div
                 key={p.id}
-                className={`rounded-lg p-3 text-center ${
+                className={`rounded-lg p-3 text-center bg-surface-container-high ${
                   good ? 'status-strip-villager' : 'status-strip-werewolf'
                 }`}
-                style={{ backgroundColor: 'rgba(30,41,59,0.4)' }}
               >
                 <div className="w-12 h-12 rounded-full mx-auto mb-2 overflow-hidden border border-outline bg-surface-container">
                   <img src={getAvatarUrl(p.name)} alt={p.name} className="w-full h-full object-cover" />
@@ -1164,10 +1214,63 @@ export default function GamePage() {
           </div>
         </>
       ) : (
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="text-xs text-muted-foreground text-center font-mono mt-4">
-            Game logs will appear here during active gameplay.
-          </div>
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 flex flex-col gap-2">
+          {gameLog.length === 0 ? (
+            <div className="text-xs text-muted-foreground text-center font-mono mt-4">
+              Chưa có log — sự kiện sẽ xuất hiện khi game bắt đầu.
+            </div>
+          ) : (
+            gameLog.map((entry) => {
+              const tone =
+                entry.tone === 'good'
+                  ? 'border-secondary/40 bg-secondary/5'
+                  : entry.tone === 'bad'
+                  ? 'border-error/40 bg-error/5'
+                  : 'border-outline bg-surface-container/40';
+              const icon =
+                entry.category === 'sprint'
+                  ? 'flag'
+                  : entry.category === 'vote'
+                  ? 'how_to_vote'
+                  : entry.category === 'skill'
+                  ? 'auto_awesome'
+                  : entry.category === 'system'
+                  ? 'settings'
+                  : 'schedule';
+              const iconColor =
+                entry.tone === 'good'
+                  ? 'text-secondary'
+                  : entry.tone === 'bad'
+                  ? 'text-error'
+                  : 'text-primary';
+              return (
+                <div
+                  key={entry.id}
+                  className={`rounded-lg border p-2 flex gap-2 ${tone}`}
+                >
+                  <span
+                    className={`material-symbols-outlined text-base shrink-0 mt-0.5 ${iconColor}`}
+                    style={{ fontVariationSettings: 'FILL 1' }}
+                  >
+                    {icon}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs leading-relaxed text-foreground break-words">
+                      {entry.text}
+                    </p>
+                    <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                      {new Date(entry.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={logsEndRef} />
         </div>
       )}
     </>
@@ -1193,9 +1296,11 @@ export default function GamePage() {
         </button>
 
         <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-          <span className="font-bold tracking-tight text-primary text-sm sm:text-lg truncate">
-            AGILE WEREWOLF
-          </span>
+          <img
+            src="/brand/logo.svg"
+            alt="Say Agile One More Time"
+            className="h-7 sm:h-8 w-auto shrink-0"
+          />
           <div className="hidden md:flex items-center gap-6 ml-6">
             <span className="text-muted-foreground font-mono text-sm">Room: {roomId}</span>
             <span className="text-secondary font-bold font-mono text-sm">
@@ -1216,10 +1321,11 @@ export default function GamePage() {
           onClick={handleShare}
           className="p-2 rounded-lg hover:bg-surface-container-high text-primary relative"
           aria-label="Chia sẻ phòng"
-          title="Chia sẻ link mời vào phòng"
         >
           <span className="material-symbols-outlined text-xl">share</span>
         </button>
+
+        <ThemeToggle />
 
         <button
           onClick={() => setChatOpen(true)}
@@ -1340,7 +1446,7 @@ export default function GamePage() {
       {/* ─── Rename dialog ─── */}
       {renameOpen && (
         <div
-          className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] bg-overlay-soft flex items-center justify-center p-4"
           onClick={() => !renameBusy && setRenameOpen(false)}
         >
           <div
@@ -1445,6 +1551,112 @@ export default function GamePage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── End-of-game modal: reset room or leave ─── */}
+      {endModalOpen && phase === 'ended' && (
+        <div
+          className="fixed inset-0 z-[80] bg-overlay-medium backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="glass-panel rounded-2xl p-6 sm:p-8 w-full max-w-md border border-outline text-center shadow-2xl">
+            <div
+              className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-4 flex items-center justify-center ${
+                badWins >= 2 ? 'glow-red' : 'glow-green'
+              }`}
+            >
+              {badWins >= 2 ? (
+                <span
+                  className="material-symbols-outlined text-4xl sm:text-5xl text-error"
+                  style={{ fontVariationSettings: 'FILL 1' }}
+                >
+                  dangerous
+                </span>
+              ) : (
+                <span
+                  className="material-symbols-outlined text-4xl sm:text-5xl text-secondary"
+                  style={{ fontVariationSettings: 'FILL 1' }}
+                >
+                  emoji_events
+                </span>
+              )}
+            </div>
+            <h2
+              className={`text-2xl sm:text-3xl font-bold mb-2 tracking-tight ${
+                badWins >= 2 ? 'text-error' : 'text-secondary'
+              }`}
+            >
+              {badWins >= 2 ? 'PHE PHÁ DỰ ÁN THẮNG!' : 'SCRUM TEAM THẮNG!'}
+            </h2>
+            <p className="text-muted-foreground text-sm font-mono mb-1">
+              Tỉ số: Tốt {goodWins} · Xấu {badWins}
+            </p>
+            <p className="text-muted-foreground text-sm mb-6">Chơi ván mới?</p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <Button
+                onClick={handleResetRoom}
+                disabled={resetBusy}
+                className="flex-1 h-12 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold tracking-wide"
+              >
+                <span className="material-symbols-outlined mr-2">refresh</span>
+                {resetBusy ? 'Đang reset...' : 'Về lobby'}
+              </Button>
+              <Button
+                onClick={handleRequestLeave}
+                variant="outline"
+                className="flex-1 h-12 font-semibold tracking-wide border-outline text-foreground hover:bg-surface-container-high"
+              >
+                <span className="material-symbols-outlined mr-2">logout</span>
+                Tìm phòng khác
+              </Button>
+            </div>
+            <button
+              onClick={() => setEndModalOpen(false)}
+              className="mt-4 text-xs text-muted-foreground hover:text-foreground underline"
+            >
+              Xem Role Reveal trước
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Leave-room confirm dialog ─── */}
+      {leaveConfirmOpen && (
+        <div
+          className="fixed inset-0 z-[90] bg-overlay-strong backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLeaveConfirmOpen(false)}
+        >
+          <div
+            className="glass-panel rounded-2xl p-6 w-full max-w-sm border border-outline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-error">warning</span>
+              <h3 className="text-lg font-bold text-foreground">Rời phòng?</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Bạn sẽ về trang chủ và có thể tìm phòng khác. Kết quả ván vừa rồi sẽ vẫn còn — có thể join lại phòng này bằng mã <span className="font-mono text-primary">{roomId}</span> nếu muốn xem lại.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setLeaveConfirmOpen(false)}
+                className="flex-1"
+              >
+                Ở lại
+              </Button>
+              <Button
+                onClick={handleConfirmLeave}
+                className="flex-1 bg-error on-color hover:bg-error/90"
+              >
+                Rời đi
+              </Button>
+            </div>
           </div>
         </div>
       )}

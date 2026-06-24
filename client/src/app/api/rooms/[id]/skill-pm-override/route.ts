@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { skillPmOverride } from '@/lib/store';
+import { skillPmOverride, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -19,7 +19,7 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot use PM override' }, { status: 400 });
     }
 
-    return NextResponse.json({ room });
+    return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId) });
   } catch (error) {
     console.error('[api/rooms/[id]/skill-pm-override POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

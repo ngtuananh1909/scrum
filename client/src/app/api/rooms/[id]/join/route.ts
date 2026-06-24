@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { joinRoom } from '@/lib/store';
+import { joinRoom, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -19,7 +19,9 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot join room' }, { status: 400 });
     }
 
-    return NextResponse.json({ room: result.room, player: result.player });
+    // Sanitize: viewer = this player. Roles of other players are stripped.
+    const safeRoom = sanitizeRoomForPlayer(result.room, playerId);
+    return NextResponse.json({ room: safeRoom, player: result.player });
   } catch (error) {
     console.error('[api/rooms/[id]/join POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

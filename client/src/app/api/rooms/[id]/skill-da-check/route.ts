@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { skillDataAnalystCheck } from '@/lib/store';
+import { skillDataAnalystCheck, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -19,9 +19,8 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot use DA check' }, { status: 400 });
     }
 
-    // Private result returned ONLY here.
     return NextResponse.json({
-      room: result.room,
+      room: sanitizeRoomForPlayer(result.room, playerId),
       result: result.private.result,
       targetId: result.private.targetId,
     });

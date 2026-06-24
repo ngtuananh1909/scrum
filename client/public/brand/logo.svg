@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none">
+  <!--
+    Full logo (mark + wordmark) — 200x48.
+    - Replace this file with your own logo at the same aspect ratio (~4.17:1).
+    - Used in the lobby header and the top nav bar of the game page.
+  -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#4AE176"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="10" fill="url(#g)"/>
+  <rect x="11" y="14" width="7" height="20" rx="1.5" fill="#fff" fill-opacity="0.95"/>
+  <rect x="20.5" y="11" width="7" height="23" rx="1.5" fill="#fff" fill-opacity="0.85"/>
+  <rect x="30" y="17" width="7" height="17" rx="1.5" fill="#fff" fill-opacity="0.75"/>
+  <text x="60" y="22" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" font-weight="700" fill="currentColor" letter-spacing="0.5">SAY AGILE</text>
+  <text x="60" y="38" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" font-weight="500" fill="currentColor" fill-opacity="0.6" letter-spacing="2">ONE MORE TIME</text>
+</svg>

@@ -182,6 +182,20 @@ export interface SprintHistoryEntry {
   timestamp: number;
 }
 
+// Append-only event log persisted inside room.state. Drives the in-game
+// "Logs" tab. Server caps total length (see MAX_GAME_LOG_ENTRIES) so the
+// JSONB blob doesn't grow unbounded across many resets.
+export type GameLogCategory = 'phase' | 'vote' | 'sprint' | 'skill' | 'system';
+
+export interface GameLogEntry {
+  id: string;             // sortable, generated server-side
+  category: GameLogCategory;
+  text: string;           // pre-formatted Vietnamese line
+  timestamp: number;      // ms epoch
+  // Optional accent for UI: 'good' | 'bad' | 'neutral'
+  tone?: 'good' | 'bad' | 'neutral';
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -227,6 +241,7 @@ export interface Room {
 
   // ===== New phase-flow state =====
   sprintHistory: SprintHistoryEntry[];
+  gameLog: GameLogEntry[];         // append-only event feed for the Logs tab
   phaseStartedAt: number | null;   // ms epoch when current phase began
   phaseDeadlineAt: number | null;  // ms epoch when current phase expires
   pmDeferredThisSprint: boolean;   // PM explicitly deferred override this sprint
@@ -361,4 +376,56 @@ export function assignSelectedRoles(players: Player[], selectedRoles: string[]):
     ...player,
     role: shuffledRoles[index] as PlayerRole,
   }));
+}
+
+// ===== Client-side role visibility sanitization =====
+// Mirrors server-side sanitizeRoomForPlayer in lib/store.ts. Used for:
+//   1. Realtime Supabase UPDATE payloads (full state broadcast).
+//   2. sessionStorage cache write.
+// Server already sanitizes its direct API responses, but realtime UPDATE
+// events still carry the unfiltered state column, so the client must
+// strip other players' roles before applying.
+//
+// Reveal rules (must match server):
+//   - viewer always sees own role
+//   - 'Scrum Master' sees all
+//   - 'Người trễ task' sees other saboteurs
+//   - 'Client' sees 'Business Analyst'
+//   - 'Business Analyst' sees 'Client'
+//   - phase==='ended' reveals all
+export function sanitizeRoomForViewer<
+  T extends { players: Array<{ id: string; role?: string | null }>; phase: string },
+>(room: T, viewerId: string | null): T {
+  const cloned: T = { ...room, players: room.players.map((p) => ({ ...p })) };
+  if (!viewerId) {
+    for (const p of cloned.players) delete (p as { role?: string | null }).role;
+    return cloned;
+  }
+  const viewer = cloned.players.find((p) => p.id === viewerId);
+  const viewerRole = viewer?.role as string | undefined;
+  const revealAll = cloned.phase === 'ended';
+  const allowed = new Set<string>([viewerId]);
+  if (revealAll) {
+    for (const p of cloned.players) allowed.add(p.id);
+  } else if (viewerRole === 'Scrum Master') {
+    for (const p of cloned.players) allowed.add(p.id);
+  } else if (viewerRole === 'Người trễ task') {
+    for (const p of cloned.players) {
+      if (p.role === 'Người trễ task') allowed.add(p.id);
+    }
+  } else if (viewerRole === 'Client') {
+    for (const p of cloned.players) {
+      if (p.role === 'Business Analyst') allowed.add(p.id);
+    }
+  } else if (viewerRole === 'Business Analyst') {
+    for (const p of cloned.players) {
+      if (p.role === 'Client') allowed.add(p.id);
+    }
+  }
+  for (const p of cloned.players) {
+    if (!allowed.has(p.id)) {
+      delete (p as { role?: string | null }).role;
+    }
+  }
+  return cloned;
 }

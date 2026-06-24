@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" fill="none">
+  <!--
+    Large wordmark — 320x80, for splash / OG image.
+    - Replace this file with your own wordmark at the same aspect ratio (4:1).
+  -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#4AE176"/>
+    </linearGradient>
+  </defs>
+  <rect width="80" height="80" rx="18" fill="url(#g)"/>
+  <rect x="18" y="22" width="12" height="36" rx="2.5" fill="#fff" fill-opacity="0.95"/>
+  <rect x="34" y="17" width="12" height="41" rx="2.5" fill="#fff" fill-opacity="0.85"/>
+  <rect x="50" y="27" width="12" height="31" rx="2.5" fill="#fff" fill-opacity="0.75"/>
+  <text x="100" y="38" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="26" font-weight="800" fill="currentColor" letter-spacing="0.5">SAY AGILE</text>
+  <text x="100" y="60" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="18" font-weight="500" fill="currentColor" fill-opacity="0.6" letter-spacing="4">ONE MORE TIME</text>
+</svg>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { proposeTeam } from '@/lib/store';
+import { proposeTeam, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -19,7 +19,7 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot propose team' }, { status: 400 });
     }
 
-    return NextResponse.json({ room });
+    return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId) });
   } catch (error) {
     console.error('[api/rooms/[id]/propose POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

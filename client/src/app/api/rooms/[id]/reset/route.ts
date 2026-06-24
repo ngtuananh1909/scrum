@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { skillQcRedo, sanitizeRoomForPlayer } from '@/lib/store';
+import { resetRoom, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -13,15 +13,17 @@ export async function POST(
       return NextResponse.json({ error: 'Missing playerId' }, { status: 400 });
     }
 
-    const room = await skillQcRedo(id, playerId);
-
+    const room = await resetRoom(id, playerId);
     if (!room) {
-      return NextResponse.json({ error: 'Cannot use QC redo' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Room not found or player not in room' },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId) });
   } catch (error) {
-    console.error('[api/rooms/[id]/skill-qc-redo POST]', error);
+    console.error('[api/rooms/[id]/reset POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

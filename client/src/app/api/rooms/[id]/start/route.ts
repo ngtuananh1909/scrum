@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { startGame } from '@/lib/store';
+import { startGame, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -19,7 +19,10 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot start game' }, { status: 400 });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      room: sanitizeRoomForPlayer(result.room, playerId),
+    });
   } catch (error) {
     console.error('[api/rooms/[id]/start POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

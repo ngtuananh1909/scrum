@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { voteExecution } from '@/lib/store';
+import { voteExecution, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -20,7 +20,7 @@ export async function POST(
     }
 
     return NextResponse.json({
-      room,
+      room: sanitizeRoomForPlayer(room, playerId),
       ack: { vote, at: Date.now(), phase: 'execution' },
     });
   } catch (error) {
