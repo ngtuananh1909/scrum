@@ -38,6 +38,7 @@ export interface CachedRoomSnapshot {
   saboteurIds: string[];
   smId: string | null;
   baId: string | null;
+  clientId: string | null;
   savedAt: number;
 }
 

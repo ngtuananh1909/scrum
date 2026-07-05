@@ -239,6 +239,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       saboteurIds: cached.saboteurIds,
       smId: cached.smId,
       baId: cached.baId,
+      clientId: cached.clientId,
       gameStarted: cached.room.phase !== 'lobby' && cached.room.phase !== 'night',
       nightZeroSeen: cached.room.phase !== 'night',
     });
@@ -249,6 +250,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const { room, playerId, role, isGood, saboteurIds, smId, baId, clientId } = data;
     const myPlayerId = playerId || get().playerId;
     const ownPlayer = myPlayerId ? (room.players || []).find((p) => p.id === myPlayerId) : null;
+    const visibleBaId = baId ?? (room.players || []).find((p) => p.role === 'Business Analyst')?.id;
+    const visibleClientId = clientId ?? (room.players || []).find((p) => p.role === 'Client')?.id;
     // After a room reset the server returns players with no `role` field.
     // Force-clear myRole + auxiliary reveal state so the sidebar doesn't
     // show a stale role from the previous game.
@@ -335,8 +338,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
             ...(resolvedIsGood !== undefined ? { isGood: resolvedIsGood } : {}),
             ...(saboteurIds ? { saboteurIds } : {}),
             ...(smId !== undefined ? { smId } : {}),
-            ...(baId !== undefined ? { baId } : {}),
-            ...(clientId !== undefined ? { clientId } : {}),
+            ...(visibleBaId !== undefined ? { baId: visibleBaId } : {}),
+            ...(visibleClientId !== undefined ? { clientId: visibleClientId } : {}),
           }),
       ...(wasNotStarted && isPostLobby && hasRole && !get().showRoleReveal && previousPhase === null
         ? { showRoleReveal: true, gameStarted: true }
@@ -356,6 +359,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         saboteurIds: after.saboteurIds,
         smId: after.smId,
         baId: after.baId,
+        clientId: after.clientId,
       });
     }
   },

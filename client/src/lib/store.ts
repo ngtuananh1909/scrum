@@ -755,10 +755,14 @@ export async function autoAdvancePhase(roomId: string): Promise<Room | null> {
   if (!room) return null;
 
   switch (room.phase) {
-    case 'night':
-      // Skip early if every skill-once-per-game player has used their skill.
-      if (allSkillsUsed(room)) return nightAdvance(roomId);
+    case 'night': {
+      const ttsMustPick =
+        room.currentSprint === 0 &&
+        room.players.some((p) => p.isAlive && p.role === 'Thực tập sinh') &&
+        !room.ttsFollowTargetId;
+      if (ttsMustPick) return room;
       return nightAdvance(roomId);
+    }
     case 'betweenSprintDiscussion':
       return advanceFromDiscussion(roomId);
     case 'sprintResult':

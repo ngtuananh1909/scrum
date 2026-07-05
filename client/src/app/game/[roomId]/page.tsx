@@ -7,8 +7,7 @@ import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RoleRevealPopup } from '@/components/RoleRevealPopup';
-import { NightOverlay } from '@/components/NightOverlay';
-import { SkillFab } from '@/components/SkillFab';
+import { SkillPanel } from '@/components/SkillFab';
 import { SkillResultToast } from '@/components/SkillResultToast';
 import { RoleConfigCounter } from '@/components/RoleConfigCounter';
 import { MobileDrawer } from '@/components/MobileDrawer';
@@ -86,7 +85,7 @@ export default function GamePage() {
   } = useGameStore();
 
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [chatTab, setChatTab] = useState<'chat' | 'logs'>('chat');
+  const [chatTab, setChatTab] = useState<'chat' | 'logs' | 'skills'>('chat');
   const [chatDraft, setChatDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1145,6 +1144,17 @@ export default function GamePage() {
           <span className="material-symbols-outlined text-lg">history</span>
           Logs
         </button>
+        <button
+          onClick={() => setChatTab('skills')}
+          className={`flex-1 py-3 flex flex-col items-center gap-1 text-xs font-mono uppercase tracking-wider transition-colors ${
+            chatTab === 'skills'
+              ? 'text-secondary border-b-2 border-secondary bg-secondary/10'
+              : 'text-muted-foreground hover:bg-surface-container-high'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">auto_awesome</span>
+          Skill
+        </button>
       </div>
 
       {chatTab === 'chat' ? (
@@ -1213,6 +1223,8 @@ export default function GamePage() {
             </div>
           </div>
         </>
+      ) : chatTab === 'skills' ? (
+        <SkillPanel />
       ) : (
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 flex flex-col gap-2">
           {gameLog.length === 0 ? (
@@ -1281,7 +1293,6 @@ export default function GamePage() {
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {showRoleReveal && <RoleRevealPopup />}
-      <NightOverlay />
       <SkillResultToast />
       <VoteFeedback />
 
@@ -1430,8 +1441,6 @@ export default function GamePage() {
         <div className="flex flex-col h-[70vh]">{renderChatBody()}</div>
       </MobileDrawer>
 
-      {/* ─── Floating skill buttons ─── */}
-      <SkillFab />
 
       {/* ─── Share toast ─── */}
       {shareToast && (
