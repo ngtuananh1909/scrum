@@ -61,6 +61,7 @@ export default function GamePage() {
     phaseRemainingMs,
     sprintHistory,
     gameLog,
+    discussionAdvanceVotes,
     proposeTeam,
     voteTeam,
     voteExecution,
@@ -798,6 +799,9 @@ export default function GamePage() {
     const secs = Math.ceil(phaseRemainingMs / 1000);
     const mm = Math.floor(secs / 60);
     const ss = secs % 60;
+    const threshold = Math.ceil(players.length / 2);
+    const votes = discussionAdvanceVotes ?? [];
+    const meVoted = playerId ? votes.includes(playerId) : false;
     return (
       <div className="space-y-6">
         <div className="glass-panel rounded-xl p-5 sm:p-6 text-center">
@@ -829,38 +833,53 @@ export default function GamePage() {
             Dev Team ({players.length})
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {players.map((p) => (
-              <div
-                key={p.id}
-                className={`glass-panel rounded-xl p-3 flex flex-col items-center gap-2 text-center border ${
-                  !p.isAlive ? 'border-outline opacity-50' : 'border-outline'
-                }`}
-              >
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-surface bg-surface-container">
-                  <img
-                    src={getAvatarUrl(p.name)}
-                    alt={p.name}
-                    className="w-full h-full object-cover"
-                  />
+            {players.map((p) => {
+              const hasVoted = votes.includes(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className={`glass-panel rounded-xl p-3 flex flex-col items-center gap-2 text-center border ${
+                    !p.isAlive ? 'border-outline opacity-50' : hasVoted ? 'border-primary' : 'border-outline'
+                  }`}
+                >
+                  <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-surface bg-surface-container">
+                    <img
+                      src={getAvatarUrl(p.name)}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                    />
+                    {hasVoted && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-primary/50">
+                        <span className="material-symbols-outlined text-white text-lg">check</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold truncate w-full">
+                      {p.name}
+                      {p.id === playerId && ' (Bạn)'}
+                    </p>
+                    <p className="text-[10px] font-mono text-muted-foreground">
+                      {p.isAlive ? 'Đang chơi' : 'Đã chết'}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold truncate w-full">
-                    {p.name}
-                    {p.id === playerId && ' (Bạn)'}
-                  </p>
-                  <p className="text-[10px] font-mono text-muted-foreground">
-                    {p.isAlive ? 'Đang chơi' : 'Đã chết'}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        <div className="text-center">
-          <Button onClick={advanceFromDiscussion} className="px-6 py-3">
+        <div className="text-center space-y-2">
+          <p className="text-xs text-muted-foreground font-mono">
+            {votes.length}/{threshold} — Sẵn sàng vào giờ tan ca
+          </p>
+          <Button
+            onClick={advanceFromDiscussion}
+            className="px-6 py-3"
+            disabled={meVoted}
+          >
             <span className="material-symbols-outlined mr-2">wb_twilight</span>
-            Vào giờ tan ca (dùng skill)
+            {meVoted ? 'Đã sẵn sàng' : 'Sẵn sàng vào giờ tan ca'}
           </Button>
         </div>
       </div>

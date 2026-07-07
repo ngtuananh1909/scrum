@@ -158,6 +158,7 @@ export async function createRoom(
     prevSprintTeam: [],
     prevExecutionVotes: {},
     prevSprintIndex: -1,
+    discussionAdvanceVotes: [],
     sprintHistory: [],
     phaseStartedAt: null,
     phaseDeadlineAt: null,
@@ -638,6 +639,7 @@ function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.postSprintMs;
 
   // Per-sprint resets (apply now so post-sprint skill window has clean state).
+  room.discussionAdvanceVotes = [];
   room.sepSilencedPlayerId = null;
   room.deadlineSilenced = false;
   room.proposedTeam = [];
@@ -678,25 +680,53 @@ export async function advanceFromSprintResult(roomId: string, playerId?: string)
 
 // Called by client after betweenSprintDiscussion acknowledged OR auto-expired.
 // Moves from betweenSprintDiscussion → night (tan ca) for skill window.
+// When called with a playerId (user click), it registers the player's vote to
+// advance. Only advances when >= half of the players have voted.
+// When called without playerId (auto-expire), force-advances immediately.
 export async function advanceFromDiscussion(roomId: string, playerId?: string): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
   if (room.phase !== 'betweenSprintDiscussion') return null;
 
-  const now = Date.now();
-  room.phase = 'night';
-  room.phaseStartedAt = now;
-  // First night (after game start) uses nightFirstMs (30s);
-  // subsequent nights use nightRecurringMs (60s). currentSprint > 0 ⇒ recurring.
-  room.phaseDeadlineAt =
-    now + (room.currentSprint === 0 ? TIMER_DEFAULTS.nightFirstMs : TIMER_DEFAULTS.nightRecurringMs);
+  // Auto-expire (timer ran out) — force advance regardless of votes.
+  if (!playerId) {
+    const now = Date.now();
+    room.phase = 'night';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt =
+      now + (room.currentSprint === 0 ? TIMER_DEFAULTS.nightFirstMs : TIMER_DEFAULTS.nightRecurringMs);
 
-  appendLog(
-    room,
-    'phase',
-    `Sprint ${room.currentSprint + 1}: vào Giờ Tan Ca (skill window).`,
-    'neutral'
-  );
+    appendLog(
+      room,
+      'phase',
+      `Sprint ${room.currentSprint + 1}: vào Giờ Tan Ca (skill window).`,
+      'neutral'
+    );
+    await writeRoom(room);
+    return room;
+  }
+
+  // Player clicked — register their vote.
+  if (!room.discussionAdvanceVotes.includes(playerId)) {
+    room.discussionAdvanceVotes.push(playerId);
+  }
+
+  const threshold = Math.ceil(room.players.length / 2);
+  if (room.discussionAdvanceVotes.length >= threshold) {
+    const now = Date.now();
+    room.phase = 'night';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt =
+      now + (room.currentSprint === 0 ? TIMER_DEFAULTS.nightFirstMs : TIMER_DEFAULTS.nightRecurringMs);
+
+    appendLog(
+      room,
+      'phase',
+      `Sprint ${room.currentSprint + 1}: vào Giờ Tan Ca (skill window).`,
+      'neutral'
+    );
+  }
+
   await writeRoom(room);
   return room;
 }

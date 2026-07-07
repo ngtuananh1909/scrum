@@ -70,6 +70,9 @@ interface RoomState {
   prevExecutionVotes: Record<string, 'success' | 'fail' | 'agree' | 'reject'>;
   prevSprintIndex: number;
 
+  // Discussion advance consensus
+  discussionAdvanceVotes: string[];
+
   // New phase-flow state
   sprintHistory: SprintHistoryEntry[];
   gameLog: GameLogEntry[];
@@ -197,6 +200,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   prevSprintIndex: -1,
   votes: {},
 
+  discussionAdvanceVotes: [],
   sprintHistory: [],
   gameLog: [],
   phaseStartedAt: null,
@@ -320,6 +324,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       prevExecutionVotes: (room.prevExecutionVotes ?? {}) as Record<string, 'success' | 'fail'>,
       prevSprintIndex: room.prevSprintIndex ?? -1,
 
+      discussionAdvanceVotes: room.discussionAdvanceVotes ?? [],
       sprintHistory: room.sprintHistory ?? [],
       gameLog: room.gameLog ?? [],
       phaseStartedAt: room.phaseStartedAt ?? null,

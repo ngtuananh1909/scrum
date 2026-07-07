@@ -230,6 +230,9 @@ export interface Room {
   deadlineSilenced: boolean;
   techDebtActive: boolean; // applies +1 to current sprint's team size
 
+  // Discussion advance consensus — players who voted to end discussion early
+  discussionAdvanceVotes: string[];
+
   // Passive / persisted state
   techLeadPresent: boolean; // computed at team approval
   ttsFollowTargetId: string | null;
