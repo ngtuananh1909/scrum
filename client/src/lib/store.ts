@@ -17,6 +17,10 @@ import {
   isGoodRole,
   isBadRole,
   ROLES,
+  GAME_LIMITS,
+  isValidRoleSelection,
+  canRoleVoteFail,
+  hasReachedWinTarget,
   TIMER_DEFAULTS,
   ttsMultiplier,
   shuffleArray,
@@ -229,7 +233,10 @@ export async function startGame(
   const po = room.players[room.currentPO];
   if (!po || po.id !== playerId) return null;
 
-  room.players = roles ? assignSelectedRoles(room.players, roles) : assignRoles(room.players);
+  if (roles && roles.length > 0 && !isValidRoleSelection(roles, room.players.length)) {
+    return null;
+  }
+  room.players = roles && roles.length > 0 ? assignSelectedRoles(room.players, roles) : assignRoles(room.players);
 
   // Always enter Tan ca (night) on game start. SM/BA/Client see info passively;
   // TTS picks follow target; everyone else waits. After timeout OR all skill-users
@@ -255,29 +262,27 @@ function buildRoleInfo(room: Room, playerId: string): StartGameResult {
     return { room, role: '', isGood: true, saboteurIds: [], smId: null, baId: null, clientId: null };
   }
 
-  const allSaboteurIds = room.players
-    .filter((p) => p.role === 'Người trễ task')
+  // Kẻ fake CV must look like Scrum Team to both SM and BA. Other bad roles
+  // are therefore the only identities SM receives in its private faction map.
+  const detectedSaboteurIds = room.players
+    .filter((p) => p.role && isBadRole(p.role) && p.role !== 'Kẻ fake CV')
     .map((p) => p.id);
   const sm = room.players.find((p) => p.role === 'Scrum Master');
   const ba = room.players.find((p) => p.role === 'Business Analyst');
-  const client = room.players.find((p) => p.role === 'Client');
-
   return {
     room,
     role: me.role,
     isGood: isGoodRole(me.role),
-    // SM sees ALL saboteurs (knows the bad team). Other saboteurs see each other.
+    // SM sees the bad faction, subject to Kẻ fake CV's explicit disguise.
     saboteurIds:
       me.role === 'Scrum Master'
-        ? allSaboteurIds
-        : me.role === 'Người trễ task'
-        ? allSaboteurIds.filter((id) => id !== playerId)
+        ? detectedSaboteurIds
         : [],
     smId: me.role === 'Scrum Master' ? sm?.id ?? null : null,
     // Client knows BA identity from night zero.
     baId: me.role === 'Client' ? ba?.id ?? null : null,
-    // BA knows Client identity from night zero (mutual reveal).
-    clientId: me.role === 'Business Analyst' ? client?.id ?? room.clientId ?? null : null,
+    // The PDF grants this reveal to Client only; BA must use its check skill.
+    clientId: null,
   };
 }
 
@@ -310,6 +315,7 @@ export async function nightZeroComplete(
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Thực tập sinh') return null;
   if (ttsTargetId && !findPlayer(room, ttsTargetId)) return null;
+  if (ttsTargetId === playerId) return null;
 
   room.ttsFollowTargetId = ttsTargetId;
 
@@ -437,11 +443,11 @@ async function tallyTeamVote(room: Room): Promise<Room> {
       room.currentPO = (room.currentPO + 1) % room.players.length;
     } while (!room.players[room.currentPO]?.isAlive);
 
-    if (room.consecutiveDelays >= 3) {
+    if (room.consecutiveDelays >= GAME_LIMITS.delaysToLose) {
       room.phase = 'ended';
       room.phaseDeadlineAt = null;
       room.phaseStartedAt = null;
-      room.badWins = Math.max(room.badWins, 2);
+      room.badWins = Math.max(room.badWins, GAME_LIMITS.winsRequired);
       appendLog(
         room,
         'sprint',
@@ -458,10 +464,8 @@ async function tallyTeamVote(room: Room): Promise<Room> {
     room.poSelectDeadlineAt = now + TIMER_DEFAULTS.poSelectTeamMs;
     room.votes = {};
     room.proposedTeam = [];
-    // Reset per-sprint skill flags
-    room.sepSilencedPlayerId = null;
-    room.deadlineSilenced = false;
-    room.pmDeferredThisSprint = false;
+    // Silence effects last for the whole Sprint, including a new proposal
+    // after a rejected team. They reset only after a Sprint result.
     appendLog(
       room,
       'vote',
@@ -488,8 +492,9 @@ export async function voteExecution(
   const player = findPlayer(room, playerId);
   if (!player || !player.role) return null;
 
-  // Good roles cannot vote fail.
-  if (isGoodRole(player.role) && vote === 'fail') {
+  // The PDF grants a Fail card to Người trễ task and to QC cẩu thả (whose
+  // Fail is worth two). The remaining roles must submit Success.
+  if (vote === 'fail' && !canRoleVoteFail(player.role)) {
     return null;
   }
 
@@ -601,39 +606,8 @@ async function tallyExecutionVote(room: Room): Promise<Room> {
 // Goes to night (tan ca) for next sprint, OR ended/discussion on terminal.
 function transitionAfterResult(room: Room, techDebtOnPrevTeam: boolean): void {
   const now = Date.now();
-
-  // Terminal: bad team wins outright.
-  if (room.badWins >= 2) {
-    room.phase = 'ended';
-    room.phaseStartedAt = now;
-    room.phaseDeadlineAt = null;
-    appendLog(room, 'sprint', `Phe Phá Dự Án thắng (≥2 fail)!`, 'bad');
-    return;
-  }
-  // Terminal: good team reached 3 wins → enter discussion (assassination).
-  if (room.goodWins >= 3) {
-    room.phase = 'discussion';
-    room.phaseStartedAt = now;
-    room.phaseDeadlineAt = now + TIMER_DEFAULTS.assassinationMs;
-    appendLog(
-      room,
-      'phase',
-      'Scrum Team đạt 3 sprint — vào vòng thảo luận lật kèo (60s).',
-      'neutral'
-    );
-    return;
-  }
-  // Terminal: ran out of sprints.
-  if (room.currentSprint >= 4) {
-    room.phase = 'ended';
-    room.phaseStartedAt = now;
-    room.phaseDeadlineAt = null;
-    appendLog(room, 'sprint', `Hết 4 sprint — game kết thúc.`, 'neutral');
-    return;
-  }
-
-  // Stay in sprintResult briefly (20s) so QC redo / DA check window applies,
-  // then advance to night (tan ca) via advanceFromSprintResult.
+  // Always expose the post-result window first: QC's one-shot redo is allowed
+  // immediately after a result, even when that result would otherwise end game.
   room.phase = 'sprintResult';
   room.phaseStartedAt = now;
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.postSprintMs;
@@ -664,6 +638,37 @@ export async function advanceFromSprintResult(roomId: string, playerId?: string)
   if (room.phase !== 'sprintResult') return null;
 
   const now = Date.now();
+  if (hasReachedWinTarget(room.badWins)) {
+    room.phase = 'ended';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = null;
+    appendLog(room, 'sprint', `Phe Phá Dự Án thắng (≥${GAME_LIMITS.winsRequired} Sprint cháy deadline)!`, 'bad');
+    await writeRoom(room);
+    return room;
+  }
+  if (hasReachedWinTarget(room.goodWins)) {
+    room.phase = 'discussion';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = now + TIMER_DEFAULTS.assassinationMs;
+    appendLog(room, 'phase', 'Scrum Team đạt 3 Sprint — vào vòng thảo luận lật kèo (60s).', 'neutral');
+    await writeRoom(room);
+    return room;
+  }
+  if (room.currentSprint >= GAME_LIMITS.totalSprints) {
+    room.phase = 'ended';
+    room.phaseStartedAt = now;
+    room.phaseDeadlineAt = null;
+    room.badWins = Math.max(room.badWins, GAME_LIMITS.winsRequired);
+    appendLog(
+      room,
+      'sprint',
+      `Hết ${GAME_LIMITS.totalSprints} Sprint mà Scrum Team chưa đạt 3 chiến thắng — phe Phá Dự Án thắng.`,
+      'bad'
+    );
+    await writeRoom(room);
+    return room;
+  }
+
   room.phase = 'betweenSprintDiscussion';
   room.phaseStartedAt = now;
   room.phaseDeadlineAt = now + TIMER_DEFAULTS.discussionMs;
@@ -737,7 +742,6 @@ export function allSkillsUsed(room: Room): boolean {
   const hasRole = (r: PlayerRole) => room.players.some((p) => p.isAlive && p.role === r);
 
   if (hasRole('Project Manager') && !room.pmOverrideUsed) return false;
-  if (hasRole('Quality Controller') && !room.qcRedoUsed) return false;
   // Data Analyst skill only available from Sprint 2 (currentSprint >= 1).
   if (hasRole('Data Analyst') && room.currentSprint >= 1 && !room.dataAnalystCheckUsed) return false;
   // Business Analyst is a check skill — also trackable.
@@ -993,7 +997,7 @@ export async function skillQcRedo(
 ): Promise<Room | null> {
   const room = await readRoom(roomId);
   if (!room) return null;
-  if (room.phase !== 'night') return null;
+  if (room.phase !== 'sprintResult') return null;
 
   const me = findPlayer(room, playerId);
   if (!me || me.role !== 'Quality Controller') return null;
@@ -1035,6 +1039,11 @@ export async function skillQcRedo(
   room.votes = {};
   room.executionVotes = {};
   room.techLeadPresent = false;
+  const priorHistory = room.sprintHistory[prevIdx - 1];
+  const techDebtPlayer = room.players.find((p) => p.role === 'Technical Debt');
+  room.techDebtActive = Boolean(
+    priorHistory && techDebtPlayer && priorHistory.proposedTeam.includes(techDebtPlayer.id)
+  );
   // Rotate PO back to whoever was PO for the rerun sprint — simplest: keep current PO.
   // (We rotated PO once in advanceAfterSprint; rotate it back.)
   do {
@@ -1248,10 +1257,9 @@ export type { Phase, Vote, PlayerRole };
 //
 // Reveal rules:
 //   - Viewer always sees their own role.
-//   - 'Scrum Master' sees ALL roles (must identify bad team from start).
-//   - 'Người trễ task' sees other saboteurs' roles.
+//   - SM receives a separate faction map; full role names stay private so
+//     Kẻ fake CV appears good.
 //   - 'Client' sees 'Business Analyst' role.
-//   - 'Business Analyst' sees 'Client' role.
 //   - During 'ended' phase, everyone sees everything (game over reveal).
 //   - 'lobby' / 'night' of the first turn: only viewer (other roles not assigned yet).
 //
@@ -1276,19 +1284,9 @@ export function sanitizeRoomForPlayer<T extends Room>(room: T, viewerId: string 
   const allowed = new Set<string>([viewerId]);
   if (revealAll) {
     for (const p of cloned.players) allowed.add(p.id);
-  } else if (viewerRole === 'Scrum Master') {
-    for (const p of cloned.players) allowed.add(p.id);
-  } else if (viewerRole === 'Người trễ task') {
-    for (const p of cloned.players) {
-      if (p.role === 'Người trễ task') allowed.add(p.id);
-    }
   } else if (viewerRole === 'Client') {
     for (const p of cloned.players) {
       if (p.role === 'Business Analyst') allowed.add(p.id);
-    }
-  } else if (viewerRole === 'Business Analyst') {
-    for (const p of cloned.players) {
-      if (p.role === 'Client') allowed.add(p.id);
     }
   }
 

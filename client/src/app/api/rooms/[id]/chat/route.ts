@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getRoom } from '@/lib/store';
+import { isSilenced } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,15 +53,16 @@ export async function POST(
       return NextResponse.json({ error: 'Message must be 1-500 characters' }, { status: 400 });
     }
 
-    // Confirm room exists so we don't accept chat into the void.
-    const { data: room } = await supabaseAdmin()
-      .from('rooms')
-      .select('id')
-      .eq('id', id)
-      .maybeSingle();
-
+    const room = await getRoom(id);
     if (!room) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 });
+    }
+    if (!room.players.some((player) => player.id === playerId)) {
+      return NextResponse.json({ error: 'Player is not in this room' }, { status: 403 });
+    }
+    const silenceApplies = room.phase === 'planning' || room.phase === 'teamVoting';
+    if (silenceApplies && isSilenced(room, playerId)) {
+      return NextResponse.json({ error: 'You are silenced for this Sprint planning' }, { status: 403 });
     }
 
     const { data, error } = await supabaseAdmin()

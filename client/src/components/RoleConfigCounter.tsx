@@ -5,7 +5,7 @@ import { useGameStore } from '@/store/gameStore';
 import { ROLES, type RoleConfig, type PlayerRole, isMultiInstance, totalSelected, canStart } from '@/lib/types';
 
 // Lobby role selection UI. Toggle for single-instance roles; +/- counter for Developer / Người trễ task.
-// PO can only start when totalSelected === players.length.
+// PO can only start with a full, playable PDF role set.
 export function RoleConfigCounter({
   onStart,
 }: {
@@ -97,7 +97,7 @@ export function RoleConfigCounter({
             Cấu hình vai trò
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Developer & Người trễ task có thể chọn nhiều, vai khác giới hạn 1.
+            Cần đúng 1 Scrum Master và ít nhất 1 Người trễ task. Developer & Người trễ task có thể chọn nhiều.
           </p>
         </div>
         <div className="flex items-center gap-3">

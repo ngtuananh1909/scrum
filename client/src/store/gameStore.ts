@@ -255,7 +255,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const myPlayerId = playerId || get().playerId;
     const ownPlayer = myPlayerId ? (room.players || []).find((p) => p.id === myPlayerId) : null;
     const visibleBaId = baId ?? (room.players || []).find((p) => p.role === 'Business Analyst')?.id;
-    const visibleClientId = clientId ?? (room.players || []).find((p) => p.role === 'Client')?.id;
+    const visibleClientId = clientId ?? null;
     // After a room reset the server returns players with no `role` field.
     // Force-clear myRole + auxiliary reveal state so the sidebar doesn't
     // show a stale role from the previous game.
@@ -276,9 +276,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const isPostLobby = room.phase !== 'lobby';
     const hasRole = !!resolvedRole;
     const currentPlayerId = playerId || get().playerId;
+    const silenceApplies = room.phase === 'planning' || room.phase === 'teamVoting';
     const derivedSilenced =
-      Boolean(room.deadlineSilenced) ||
-      (currentPlayerId !== null && room.sepSilencedPlayerId === currentPlayerId);
+      silenceApplies &&
+      (Boolean(room.deadlineSilenced) ||
+        (currentPlayerId !== null && room.sepSilencedPlayerId === currentPlayerId));
 
     // Clear vote ack when phase changes away from voting.
     const previousPhase = get().phase;
@@ -344,7 +346,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             ...(saboteurIds ? { saboteurIds } : {}),
             ...(smId !== undefined ? { smId } : {}),
             ...(visibleBaId !== undefined ? { baId: visibleBaId } : {}),
-            ...(visibleClientId !== undefined ? { clientId: visibleClientId } : {}),
+            clientId: visibleClientId,
           }),
       ...(wasNotStarted && isPostLobby && hasRole && !get().showRoleReveal && previousPhase === null
         ? { showRoleReveal: true, gameStarted: true }
@@ -919,6 +921,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       .then((data) => set({ messages: data.messages || [] }))
       .catch(() => {});
 
+    const refreshPrivateRoleInfo = () => {
+      const playerId = get().playerId;
+      if (!playerId) return;
+      fetch(`${API_URL}/api/rooms/${roomId}/role-info?playerId=${encodeURIComponent(playerId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => data && get().setRoomFromResponse(data))
+        .catch(() => {});
+    };
+    refreshPrivateRoleInfo();
+
     const channel = supabase
       .channel(`room:${roomId}`)
       .on(
@@ -938,6 +950,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const viewerId = get().playerId;
           const room = sanitizeRoomForViewer(rawRoom, viewerId);
           get().setRoomFromResponse({ room });
+          if (rawRoom.phase !== 'lobby') refreshPrivateRoleInfo();
         }
       )
       .on(

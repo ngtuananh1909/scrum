@@ -12,6 +12,14 @@ export const SPRINT_SIZES: Record<number, number[]> = {
 
 export const REQUIRES_DOUBLE_FAIL = [7, 8, 9, 10];
 
+// The PDF specifies four Sprints: three Sprint results decide the match, and
+// four rejected team proposals give the bad side an immediate win.
+export const GAME_LIMITS = {
+  totalSprints: 4,
+  winsRequired: 3,
+  delaysToLose: 4,
+} as const;
+
 // Full PDF role set: 8 good + 7 bad. Multi-instance: Developer, Người trễ task.
 export const ROLES = {
   GOOD: [
@@ -43,7 +51,7 @@ export const MULTI_INSTANCE_ROLES: PlayerRole[] = ['Developer', 'Người trễ 
 
 export const ROLE_DESCRIPTIONS: Record<PlayerRole, string> = {
   'Scrum Master': 'Người dẫn dắt team. Bí mật biết danh tính phe Phá Dự Án ngay từ đầu. Nếu Người trễ task đoán đúng bạn cuối game, phe xấu thắng.',
-  'Project Manager': 'Có quyền chiếm chỉ định nhóm Sprint (1 lần/game). Khi dùng, bỏ qua biểu quyết, đi thẳng vào thực thi.',
+  'Project Manager': 'Trước một Sprint, có quyền chỉ định thẳng nhóm (1 lần/game), vô hiệu đề xuất và biểu quyết của PO.',
   'Developer': 'Lá phiếu biểu quyết quan trọng. Phải vote SUCCESS khi đi Sprint.',
   'Business Analyst': 'Kiểm tra 2 người (1 lần/game). Quản trò trả Yes nếu ≥1 thuộc phe xấu, ngược lại No.',
   'Quality Controller': 'Yêu cầu làm lại Sprint (1 lần/game). Hủy kết quả Sprint vừa công bố, lập kế hoạch lại từ đầu.',
@@ -65,13 +73,13 @@ export const ROLE_SKILLS: Record<PlayerRole, { name: string; effect: string; tri
   // === GOOD ===
   'Scrum Master': {
     name: 'Nội gián phe tốt',
-    effect: 'Biết danh tính toàn bộ phe Phá Dự Án từ đầu game. Phe xấu thắng nếu Người trễ task đoán đúng bạn cuối game.',
+    effect: 'Biết phe Phá Dự Án từ đầu game, trừ Kẻ fake CV (hiện là Scrum Team). Phe xấu thắng nếu Người trễ task đoán đúng bạn cuối game.',
     trigger: 'Passive — luôn biết',
   },
   'Project Manager': {
     name: 'Chiếm chỉ định nhóm',
-    effect: '1 lần/game. Khi nhóm bị reject, dùng skill để bỏ qua biểu quyết, đi thẳng vào thực thi Sprint.',
-    trigger: 'Dùng trong Team Voting khi team vừa bị reject',
+    effect: '1 lần/game, trước một Sprint. Chỉ định thẳng nhóm và bỏ qua đề xuất lẫn biểu quyết của PO.',
+    trigger: 'Dùng trong giờ tan ca, trước khi vào Planning',
   },
   'Developer': {
     name: 'Lá phiếu trung thành',
@@ -290,7 +298,23 @@ export function totalSelected(cfg: RoleConfig): number {
 }
 
 export function canStart(cfg: RoleConfig, playerCount: number): boolean {
-  return totalSelected(cfg) === playerCount && playerCount >= 5;
+  return (
+    totalSelected(cfg) === playerCount &&
+    playerCount >= 5 &&
+    (cfg.counts['Scrum Master'] ?? 0) === 1 &&
+    (cfg.counts['Người trễ task'] ?? 0) >= 1
+  );
+}
+
+export function isValidRoleSelection(selectedRoles: string[], playerCount: number): boolean {
+  if (selectedRoles.length !== playerCount || playerCount < 5) return false;
+  if (!selectedRoles.every((role) => isGoodRole(role) || isBadRole(role))) return false;
+  if (selectedRoles.filter((role) => role === 'Scrum Master').length !== 1) return false;
+  if (!selectedRoles.some((role) => role === 'Người trễ task')) return false;
+
+  return selectedRoles.every(
+    (role, index) => isMultiInstance(role as PlayerRole) || selectedRoles.indexOf(role) === index
+  );
 }
 
 // Flatten RoleConfig into a list of role strings (one per player).
@@ -325,6 +349,14 @@ export function isBadRole(role: string): boolean {
   return (ROLES.BAD as readonly string[]).includes(role);
 }
 
+export function canRoleVoteFail(role: string): boolean {
+  return role === 'Người trễ task' || role === 'QC cẩu thả';
+}
+
+export function hasReachedWinTarget(wins: number): boolean {
+  return wins >= GAME_LIMITS.winsRequired;
+}
+
 // A player is silenced when Deadline activated this sprint OR Sếp targeted them.
 export function isSilenced(room: Pick<Room, 'deadlineSilenced' | 'sepSilencedPlayerId'>, playerId: string): boolean {
   return Boolean(room.deadlineSilenced) || room.sepSilencedPlayerId === playerId;
@@ -355,13 +387,17 @@ export function defaultRolePool(playerCount: number): string[] {
   const goodCount = Math.ceil(playerCount * 0.6);
   const badCount = playerCount - goodCount;
 
-  const nonMultiGood = ROLES.GOOD.filter((r) => !isMultiInstance(r));
-  const nonMultiBad = ROLES.BAD.filter((r) => !isMultiInstance(r));
+  // A playable PDF game always has an SM to protect and at least one
+  // Người trễ task to perform the end-game guess.
+  const nonMultiGood = ROLES.GOOD.filter((r) => !isMultiInstance(r) && r !== 'Scrum Master');
+  const nonMultiBad = ROLES.BAD.filter((r) => !isMultiInstance(r) && r !== 'Người trễ task');
 
-  const good = shuffleArray([...nonMultiGood]).slice(0, Math.min(goodCount, nonMultiGood.length));
+  const good: string[] = ['Scrum Master'];
+  good.push(...shuffleArray([...nonMultiGood]).slice(0, Math.min(goodCount - good.length, nonMultiGood.length)));
   while (good.length < goodCount) good.push('Developer');
 
-  const bad = shuffleArray([...nonMultiBad]).slice(0, Math.min(badCount, nonMultiBad.length));
+  const bad: string[] = ['Người trễ task'];
+  bad.push(...shuffleArray([...nonMultiBad]).slice(0, Math.min(badCount - bad.length, nonMultiBad.length)));
   while (bad.length < badCount) bad.push('Người trễ task');
 
   return [...good, ...bad];
@@ -391,10 +427,9 @@ export function assignSelectedRoles(players: Player[], selectedRoles: string[]):
 //
 // Reveal rules (must match server):
 //   - viewer always sees own role
-//   - 'Scrum Master' sees all
-//   - 'Người trễ task' sees other saboteurs
+//   - SM faction information is supplied privately as saboteurIds; full role
+//     names remain hidden so Kẻ fake CV can appear good.
 //   - 'Client' sees 'Business Analyst'
-//   - 'Business Analyst' sees 'Client'
 //   - phase==='ended' reveals all
 export function sanitizeRoomForViewer<
   T extends { players: Array<{ id: string; role?: string | null }>; phase: string },
@@ -410,19 +445,9 @@ export function sanitizeRoomForViewer<
   const allowed = new Set<string>([viewerId]);
   if (revealAll) {
     for (const p of cloned.players) allowed.add(p.id);
-  } else if (viewerRole === 'Scrum Master') {
-    for (const p of cloned.players) allowed.add(p.id);
-  } else if (viewerRole === 'Người trễ task') {
-    for (const p of cloned.players) {
-      if (p.role === 'Người trễ task') allowed.add(p.id);
-    }
   } else if (viewerRole === 'Client') {
     for (const p of cloned.players) {
       if (p.role === 'Business Analyst') allowed.add(p.id);
-    }
-  } else if (viewerRole === 'Business Analyst') {
-    for (const p of cloned.players) {
-      if (p.role === 'Client') allowed.add(p.id);
     }
   }
   for (const p of cloned.players) {

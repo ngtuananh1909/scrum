@@ -4,11 +4,11 @@ TECH STACK: Next.js, Tailwind CSS, Shadcn UI, Socket.io, Node.js, Express, Zusta
 
 1. CORE LOOP
 
-The game has up to 5 Sprints (Rounds).
+The game has exactly 4 Sprints (Rounds).
 
 Good Guys (Scrum Team) need 3 successful sprints to win.
 
-Bad Guys (Saboteurs/Người trễ task) need 3 failed sprints OR 4 consecutive delayed sprint plannings to win.
+Bad Guys need 3 failed Sprints OR 4 consecutive rejected team proposals to win. If Scrum Team does not reach 3 successes after Sprint 4, Bad Guys win.
 
 2. SPRINT PHASES
 
@@ -16,21 +16,21 @@ Phase 1: Planning. Current PO (Product Owner) selects players for the Sprint.
 
 Phase 2: Team Voting. ALL players vote "Agree" or "Reject" on the proposed team. Majority wins. If rejected, PO role passes to the next person. 4 consecutive delays = Bad Guys win.
 
-Phase 3: Execution. Only the selected players vote secretly: "Success" or "Fail". Good guys MUST vote Success. Bad guys can vote Success or Fail. 1 "Fail" vote = Sprint Fails (unless Tech Lead is present or specific player count rules apply).
+Phase 3: Execution. Only the selected players vote secretly: "Success" or "Fail". Only Người trễ task and QC cẩu thả may vote Fail. 1 "Fail" vote = Sprint Fails (unless Technical Leader is present or specific player count rules apply).
 
-3. PLAYER COUNT MATRIX (Sprint 1, 2, 3, 4, 5 team sizes)
+3. PLAYER COUNT MATRIX (Sprint 1, 2, 3, 4 team sizes)
 
-5 players: 2, 3, 2, 3, 3
+5 players: 2, 3, 2, 3
 
-6 players: 2, 3, 4, 3, 4
+6 players: 2, 3, 4, 3
 
-7 players: 2, 3, 3 (requires 2 fails to fail), 4, 4
+7 players: 2, 3, 3 (requires 2 fails to fail), 4
 
-8 players: 3, 4, 4 (requires 2 fails to fail), 5, 5
+8 players: 3, 4, 4 (requires 2 fails to fail), 5
 
-9 players: 3, 4, 4 (requires 2 fails to fail), 5, 5
+9 players: 3, 4, 4 (requires 2 fails to fail), 5
 
-10 players: 3, 4, 5 (requires 2 fails to fail), 6, 6
+10 players: 3, 4, 5 (requires 2 fails to fail), 6
 
 4. ROLES
 
@@ -42,17 +42,17 @@ Project Manager (PM): Once per game, can override the PO and pick the team.
 
 Developer: Standard role, no special ability.
 
-Business Analyst (BA): Knows who the "Client" is.
+Business Analyst (BA): Once per game checks two players; the result is Yes if either is bad. Kẻ fake CV appears good.
 
-Tech Lead: If on a team, the Sprint succeeds even if there is a "Fail" vote.
+Technical Leader: If on a team, exactly one Fail is converted to Success.
 
 Data Analyst: Once per game, secretly checks a player's past vote.
 
 [BAD GUYS]
 
-Người trễ task (Saboteur): Can vote Fail. Knows other saboteurs. If Good Guys win 3 sprints, they can guess who the SM is to steal the win.
+Người trễ task (Saboteur): Can vote Fail. If Good Guys win 3 Sprints, they can guess who the SM is to steal the win.
 
-QC cẩu thả: If on a Sprint, the NEXT sprint automatically fails due to hidden bugs.
+QC cẩu thả: Its Fail vote counts as two Fail votes.
 
 YOUR TASKS (Execute step-by-step, ask for user confirmation before moving to next step)
 

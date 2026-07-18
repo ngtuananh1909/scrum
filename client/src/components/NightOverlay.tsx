@@ -5,12 +5,11 @@ import { useGameStore } from '@/store/gameStore';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { getAvatarUrl } from '@/lib/utils';
-import { isGoodRole, isBadRole, ROLE_SKILLS, type PlayerRole } from '@/lib/types';
+import { ROLE_SKILLS, type PlayerRole } from '@/lib/types';
 
 // Full-screen overlay shown whenever phase === 'night'.
 // - SM: full red/green role table for all players (every night).
 // - Client: BA identity reveal.
-// - BA: Client identity reveal (NEW — mutual).
 // - TTS (first night only): target picker.
 // - Others with skill FABs: hint to use skills.
 // - Others: "Đang chờ giờ tan ca..." with continue button (auto-advances when timer hits 0).
@@ -21,7 +20,6 @@ export function NightOverlay() {
   const players = useGameStore((s) => s.players);
   const saboteurIds = useGameStore((s) => s.saboteurIds);
   const baId = useGameStore((s) => s.baId);
-  const clientId = useGameStore((s) => s.clientId);
   const smId = useGameStore((s) => s.smId);
   const currentSprint = useGameStore((s) => s.currentSprint);
   const ttsFollowTargetId = useGameStore((s) => s.ttsFollowTargetId);
@@ -37,7 +35,6 @@ export function NightOverlay() {
   const isTTS = myRole === 'Thực tập sinh';
   const isSM = myRole === 'Scrum Master';
   const isClient = myRole === 'Client';
-  const isBA = myRole === 'Business Analyst';
 
   const isFirstNight = currentSprint === 0;
   const ttsNeedsToPick = isTTS && isFirstNight && !ttsFollowTargetId;
@@ -59,7 +56,6 @@ export function NightOverlay() {
   const isUrgent = phaseRemainingMs < 5000 && phaseRemainingMs > 0;
 
   const baPlayer = players.find((p) => p.id === baId);
-  const clientPlayer = players.find((p) => p.id === clientId);
   const smPlayer = players.find((p) => p.id === smId);
 
   return (
@@ -108,9 +104,7 @@ export function NightOverlay() {
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[50vh] overflow-y-auto">
                 {players.map((p) => {
-                  const role = p.role ?? 'Scrum Master';
-                  const bad = isBadRole(role);
-                  const good = isGoodRole(role);
+                  const bad = saboteurIds.includes(p.id);
                   const isMe = p.id === playerId;
                   return (
                     <div
@@ -118,9 +112,7 @@ export function NightOverlay() {
                       className={`flex items-center gap-2 p-2 rounded-lg border ${
                         bad
                           ? 'border-error/40 bg-error/5'
-                          : good
-                          ? 'border-secondary/40 bg-secondary/5'
-                          : 'border-outline'
+                          : 'border-secondary/40 bg-secondary/5'
                       }`}
                     >
                       <div className="relative">
@@ -194,39 +186,6 @@ export function NightOverlay() {
             </>
           )}
 
-          {/* BA — sees Client (mutual reveal) */}
-          {isBA && (
-            <>
-              <p className="text-sm text-center text-muted-foreground">
-                Bạn là <strong className="text-secondary">Business Analyst</strong>. Đồng minh
-                nội gián của bạn:
-              </p>
-              {clientPlayer ? (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-error">
-                    <img
-                      src={getAvatarUrl(clientPlayer.name)}
-                      alt={clientPlayer.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <p className="text-sm font-mono text-error">{clientPlayer.name}</p>
-                  <p className="text-xs text-muted-foreground italic">
-                    Nội gián: Đây chính là Client!
-                  </p>
-                </div>
-              ) : (
-                <p className="text-xs text-center text-muted-foreground italic">
-                  (Không có Client trong phòng)
-                </p>
-              )}
-              <Button onClick={handleContinue} className="w-full">
-                <span className="material-symbols-outlined mr-2">visibility</span>
-                Đã ghi nhớ
-              </Button>
-            </>
-          )}
-
           {/* TTS — first night target picker */}
           {ttsNeedsToPick && (
             <>
@@ -287,7 +246,7 @@ export function NightOverlay() {
           )}
 
           {/* Other roles with skill FABs */}
-          {!isSM && !isClient && !isBA && !isTTS && (
+          {!isSM && !isClient && !isTTS && (
             <OtherRoleHint myRole={myRole} onContinue={handleContinue} />
           )}
 

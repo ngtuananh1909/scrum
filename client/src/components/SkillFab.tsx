@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import {
   getSprintSize,
-  isBadRole,
-  isGoodRole,
   ROLE_DESCRIPTIONS,
   ROLE_SKILLS,
   type PlayerRole,
@@ -31,7 +29,6 @@ export function SkillPanel() {
   const currentSprint = useGameStore((s) => s.currentSprint);
   const saboteurIds = useGameStore((s) => s.saboteurIds);
   const baId = useGameStore((s) => s.baId);
-  const clientId = useGameStore((s) => s.clientId);
   const smId = useGameStore((s) => s.smId);
   const pmOverrideUsed = useGameStore((s) => s.pmOverrideUsed);
   const pmDeferredThisSprint = useGameStore((s) => s.pmDeferredThisSprint);
@@ -87,7 +84,7 @@ export function SkillPanel() {
   if (isNight && myRole === 'Business Analyst') {
     buttons.push({ skillKey: 'ba', label: 'BA Check', icon: 'search_check', accent: 'good', cooldown: businessAnalystCheckUsed ? '1/1' : '0/1', disabled: businessAnalystCheckUsed });
   }
-  if (isNight && myRole === 'Quality Controller') {
+  if (phase === 'sprintResult' && myRole === 'Quality Controller') {
     buttons.push({ skillKey: 'qc', label: 'QC Redo', icon: 'restart_alt', accent: 'good', cooldown: qcRedoUsed ? '1/1' : '0/1', disabled: qcRedoUsed });
   }
   if (isNight && myRole === 'Data Analyst') {
@@ -113,7 +110,6 @@ export function SkillPanel() {
         playerId={playerId}
         saboteurIds={saboteurIds}
         baId={baId}
-        clientId={clientId}
         smId={smId}
         ttsTargetName={ttsTarget?.name}
       />
@@ -123,7 +119,11 @@ export function SkillPanel() {
           <div>
             <p className="text-[10px] font-mono uppercase tracking-widest text-primary">Kỹ năng</p>
             <p className="text-xs text-muted-foreground">
-              {isNight ? 'Dùng trong Giờ Tan Ca. Không có nút skip.' : 'Skill chỉ mở trong Giờ Tan Ca.'}
+              {phase === 'sprintResult'
+                ? 'QC có thể yêu cầu làm lại kết quả Sprint vừa công bố.'
+                : isNight
+                ? 'Dùng trong Giờ Tan Ca. Không có nút skip.'
+                : 'Skill chưa mở trong phase này.'}
             </p>
           </div>
           <span className="material-symbols-outlined text-primary">auto_awesome</span>
@@ -302,7 +302,6 @@ function SkillRoleCard({
   playerId,
   saboteurIds,
   baId,
-  clientId,
   smId,
   ttsTargetName,
 }: {
@@ -312,13 +311,11 @@ function SkillRoleCard({
   playerId: string | null;
   saboteurIds: string[];
   baId: string | null;
-  clientId: string | null;
   smId: string | null;
   ttsTargetName?: string;
 }) {
   const skill = ROLE_SKILLS[role];
   const baPlayer = players.find((p) => p.id === baId);
-  const clientPlayer = players.find((p) => p.id === clientId);
   const smPlayer = players.find((p) => p.id === smId);
 
   return (
@@ -346,9 +343,7 @@ function SkillRoleCard({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
             {players.map((p) => {
-              const playerRole = p.role ?? 'Scrum Master';
-              const bad = saboteurIds.includes(p.id) || isBadRole(playerRole);
-              const good = isGoodRole(playerRole);
+              const bad = saboteurIds.includes(p.id);
               const isMe = p.id === playerId;
               return (
                 <div
@@ -356,9 +351,7 @@ function SkillRoleCard({
                   className={`flex items-center gap-2 p-2 rounded-lg border ${
                     bad
                       ? 'border-error/40 bg-error/5'
-                      : good
-                      ? 'border-secondary/40 bg-secondary/5'
-                      : 'border-outline'
+                      : 'border-secondary/40 bg-secondary/5'
                   }`}
                 >
                   <div className="w-9 h-9 rounded-full overflow-hidden border border-outline bg-surface-container shrink-0">
@@ -386,10 +379,6 @@ function SkillRoleCard({
 
       {isNight && role === 'Client' && (
         <AllyCard title="Đồng minh nội gián của bạn" player={baPlayer} empty="Không có Business Analyst trong phòng" tone="good" />
-      )}
-
-      {isNight && role === 'Business Analyst' && (
-        <AllyCard title="Đồng minh nội gián của bạn" player={clientPlayer} empty="Không có Client trong phòng" tone="bad" />
       )}
 
       {role === 'Thực tập sinh' && ttsTargetName && (
