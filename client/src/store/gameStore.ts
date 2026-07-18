@@ -117,6 +117,7 @@ interface GameStore extends RoomState {
   advanceFromDiscussion: () => Promise<void>;
   saboteurGuess: (guessedSmId: string) => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
+  renamePlayer: (newName: string) => Promise<string | null>;
 
   // Skill actions
   nightZeroComplete: (ttsTargetId: string | null) => Promise<void>;
@@ -691,6 +692,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (error) {
       console.error('[sendMessage]', error);
       set({ error: 'Network error' });
+    }
+  },
+
+  renamePlayer: async (newName) => {
+    const trimmedName = newName.trim().slice(0, 20);
+    const { roomId, playerId } = get();
+    if (!roomId || !playerId || !trimmedName) return 'Tên không hợp lệ.';
+    try {
+      const res = await fetch(`${API_URL}/api/rooms/${roomId}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId, newName: trimmedName }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return data.error || 'Không thể đổi tên lúc này.';
+      }
+      const data = await res.json();
+      if (data.room) get().setRoomFromResponse({ room: data.room });
+      set({ playerName: trimmedName });
+      setPersistedPlayerName(trimmedName);
+      return null;
+    } catch (error) {
+      console.error('[renamePlayer]', error);
+      return 'Lỗi kết nối. Vui lòng thử lại.';
     }
   },
 

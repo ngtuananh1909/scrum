@@ -212,6 +212,25 @@ export interface Player {
   socketId?: string;
 }
 
+// Player names identify people in the room UI, so names that differ only by
+// whitespace or letter case must still be treated as the same name.
+export function normalizePlayerName(name: string): string {
+  return name.trim().toLocaleLowerCase();
+}
+
+export function isPlayerNameAvailable(
+  players: Pick<Player, 'id' | 'name'>[],
+  candidate: string,
+  excludePlayerId?: string
+): boolean {
+  const normalizedCandidate = normalizePlayerName(candidate);
+  return !players.some(
+    (player) =>
+      player.id !== excludePlayerId &&
+      normalizePlayerName(player.name) === normalizedCandidate
+  );
+}
+
 export interface Room {
   id: string;
   players: Player[];

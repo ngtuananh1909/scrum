@@ -21,6 +21,7 @@ import {
   isValidRoleSelection,
   canRoleVoteFail,
   hasReachedWinTarget,
+  isPlayerNameAvailable,
   TIMER_DEFAULTS,
   ttsMultiplier,
   shuffleArray,
@@ -122,6 +123,13 @@ function findPlayer(room: Room, playerId: string): Player | null {
   return room.players.find((p) => p.id === playerId) ?? null;
 }
 
+export class PlayerNameTakenError extends Error {
+  constructor() {
+    super('That player name is already in use in this room');
+    this.name = 'PlayerNameTakenError';
+  }
+}
+
 // ===== Room Operations =====
 
 export async function createRoom(
@@ -130,11 +138,13 @@ export async function createRoom(
   playerId: string
 ): Promise<{ room: Room; player: Player } | null> {
   if (!playerId) return null;
+  const trimmedName = playerName.trim().slice(0, 20);
+  if (!trimmedName) return null;
 
   const existing = await readRoom(roomId);
   if (existing) return null;
 
-  const player: Player = { id: playerId, name: playerName, isAlive: true };
+  const player: Player = { id: playerId, name: trimmedName, isAlive: true };
 
   const room: Room = {
     id: roomId,
@@ -173,7 +183,7 @@ export async function createRoom(
     lastUpdated: Date.now(),
   };
 
-  appendLog(room, 'system', `Phòng ${room.id} được tạo bởi ${playerName}.`);
+  appendLog(room, 'system', `Phòng ${room.id} được tạo bởi ${trimmedName}.`);
   await writeRoom(room);
   return { room, player };
 }
@@ -184,6 +194,8 @@ export async function joinRoom(
   playerId: string
 ): Promise<{ room: Room; player: Player } | null> {
   if (!playerId) return null;
+  const trimmedName = playerName.trim().slice(0, 20);
+  if (!trimmedName) return null;
 
   const room = await readRoom(roomId);
   if (!room) return null;
@@ -192,8 +204,11 @@ export async function joinRoom(
   // (so refresh mid-game works). Update name if changed.
   const existing = room.players.find((p) => p.id === playerId);
   if (existing) {
-    if (existing.name !== playerName) {
-      existing.name = playerName;
+    if (existing.name !== trimmedName) {
+      if (!isPlayerNameAvailable(room.players, trimmedName, playerId)) {
+        throw new PlayerNameTakenError();
+      }
+      existing.name = trimmedName;
       await writeRoom(room);
     }
     return { room, player: existing };
@@ -202,10 +217,13 @@ export async function joinRoom(
   // New player joining: only allowed in lobby, max 10.
   if (room.phase !== 'lobby') return null;
   if (room.players.length >= 10) return null;
+  if (!isPlayerNameAvailable(room.players, trimmedName)) {
+    throw new PlayerNameTakenError();
+  }
 
-  const player: Player = { id: playerId, name: playerName, isAlive: true };
+  const player: Player = { id: playerId, name: trimmedName, isAlive: true };
   room.players.push(player);
-  appendLog(room, 'system', `${playerName} đã tham gia phòng.`);
+  appendLog(room, 'system', `${trimmedName} đã tham gia phòng.`);
   await writeRoom(room);
   return { room, player };
 }
@@ -1241,6 +1259,9 @@ export async function renamePlayer(
   if (!room) return null;
   const me = room.players.find((p) => p.id === playerId);
   if (!me) return null;
+  if (!isPlayerNameAvailable(room.players, trimmed, playerId)) {
+    throw new PlayerNameTakenError();
+  }
   me.name = trimmed;
   await writeRoom(room);
   return room;

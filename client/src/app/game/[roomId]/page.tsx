@@ -82,6 +82,7 @@ export default function GamePage() {
     playerName,
     messages,
     sendMessage,
+    renamePlayer,
     showRoleReveal,
   } = useGameStore();
 
@@ -94,14 +95,13 @@ export default function GamePage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [endModalOpen, setEndModalOpen] = useState(true);
   const [resetBusy, setResetBusy] = useState(false);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-
-  const API_URL_FALLBACK = process.env.NEXT_PUBLIC_API_URL || '';
 
   // Mount: ensure UUID, hydrate from cache (instant render), then fire rejoin POST.
   useEffect(() => {
@@ -193,6 +193,7 @@ export default function GamePage() {
 
   const openRename = () => {
     setRenameDraft(playerName || '');
+    setRenameError(null);
     setRenameOpen(true);
   };
 
@@ -200,24 +201,13 @@ export default function GamePage() {
     const newName = renameDraft.trim();
     if (!newName || !playerId) return;
     setRenameBusy(true);
-    try {
-      const res = await fetch(`${API_URL_FALLBACK}/api/rooms/${roomId}/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId, newName }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.room) {
-          setRoomFromResponse({ room: data.room });
-        }
-        setRenameOpen(false);
-      }
-    } catch (err) {
-      console.error('[rename]', err);
-    } finally {
-      setRenameBusy(false);
+    const error = await renamePlayer(newName);
+    setRenameBusy(false);
+    if (error) {
+      setRenameError(error);
+      return;
     }
+    setRenameOpen(false);
   };
 
   // "Về lobby" — reset the same room. Modal closes when phase leaves 'ended'.
@@ -1499,7 +1489,7 @@ export default function GamePage() {
               <h3 className="text-lg font-bold text-foreground">Đổi tên hiển thị</h3>
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              Tên sẽ hiển thị cho các người chơi khác trong phòng.
+              Tên phải là duy nhất trong phòng, không phân biệt viết hoa hoặc khoảng trắng.
             </p>
             <input
               type="text"
@@ -1513,6 +1503,11 @@ export default function GamePage() {
               autoFocus
               className="w-full bg-surface-container border border-outline rounded-lg py-2 px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
             />
+            {renameError && (
+              <p className="mt-2 text-xs text-error" role="alert">
+                {renameError}
+              </p>
+            )}
             <div className="flex gap-2 mt-4">
               <Button
                 variant="outline"

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { renamePlayer, sanitizeRoomForPlayer } from '@/lib/store';
+import { PlayerNameTakenError, renamePlayer, sanitizeRoomForPlayer } from '@/lib/store';
 
 export async function POST(
   request: Request,
@@ -21,6 +21,9 @@ export async function POST(
 
     return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId) });
   } catch (error) {
+    if (error instanceof PlayerNameTakenError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.error('[api/rooms/[id]/rename POST]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
