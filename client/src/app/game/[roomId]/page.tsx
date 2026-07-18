@@ -1310,13 +1310,13 @@ export default function GamePage() {
   const isVotingPhase = phase === 'teamVoting' || phase === 'execution';
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="command-room h-screen flex flex-col bg-background overflow-hidden">
       {showRoleReveal && <RoleRevealPopup />}
       <SkillResultToast />
       <VoteFeedback />
 
       {/* ─── TopNavBar ─── */}
-      <nav className="h-14 sm:h-16 shrink-0 bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant flex justify-between items-center px-3 sm:px-6 z-30 gap-2">
+      <nav className="command-topbar h-14 sm:h-16 shrink-0 flex justify-between items-center px-3 sm:px-6 z-30 gap-2" aria-label="Điều hướng phòng chơi">
         <button
           onClick={() => setMenuOpen(true)}
           className="md:hidden p-2 rounded-lg hover:bg-surface-container-high text-muted-foreground"
@@ -1371,19 +1371,31 @@ export default function GamePage() {
 
       <div className="flex flex-1 overflow-hidden relative">
         {/* ─── Left desktop sidebar ─── */}
-        <aside className="hidden md:flex flex-col w-72 lg:w-80 shrink-0 h-full overflow-hidden bg-surface-container-low/60 backdrop-blur-lg border-r border-outline-variant z-20">
+        <aside className="command-sidebar command-sidebar--left hidden md:flex flex-col w-72 lg:w-80 shrink-0 h-full overflow-hidden z-20">
           {renderSidebarBody()}
         </aside>
 
         {/* ─── Main canvas ─── */}
-        <main className="flex-1 overflow-y-auto relative p-3 sm:p-6 z-10">
-          {phase && phase !== 'ended' && phase !== 'night' && (
-            <div className="mb-4 sm:mb-6 max-w-2xl mx-auto">{renderSprintBar()}</div>
-          )}
+        <main className="command-canvas flex-1 overflow-y-auto relative p-3 sm:p-6 z-10">
+          <div className="command-canvas__inner">
+            <header className="command-phase-header">
+              <div className="min-w-0">
+                <p className="tactical-kicker">CURRENT PHASE · SPRINT {currentSprint + 1}</p>
+                <h1 className="command-phase-title">{phase ? PHASE_LABELS[phase] || phase : 'Đang kết nối'}</h1>
+              </div>
+              <div className="command-phase-header__meta">
+                <span>ROOM</span>
+                <strong>{roomId}</strong>
+              </div>
+            </header>
 
-          {/* Per-phase cooldown TimerBar */}
-          {phaseDeadlineAt && phaseStartedAt && phase && phase !== 'lobby' && phase !== 'ended' && (
-            <div className="mb-4 max-w-2xl mx-auto">
+            {phase && phase !== 'ended' && phase !== 'night' && (
+              <div className="command-progress-rail">{renderSprintBar()}</div>
+            )}
+
+            {/* Per-phase cooldown TimerBar */}
+            {phaseDeadlineAt && phaseStartedAt && phase && phase !== 'lobby' && phase !== 'ended' && (
+              <div className="command-timer-slot">
               <TimerBar
                 remainingMs={phaseRemainingMs}
                 totalMs={Math.max(1, phaseDeadlineAt - phaseStartedAt)}
@@ -1408,10 +1420,10 @@ export default function GamePage() {
                 }
                 variant={phase as any}
               />
-            </div>
-          )}
+              </div>
+            )}
 
-          <div className="max-w-4xl mx-auto pb-32">
+            <div className="command-board pb-32">
             {phase === 'lobby' && renderLobby()}
             {phase === 'planning' && renderPlanning()}
             {phase === 'teamVoting' && renderTeamVoting()}
@@ -1443,20 +1455,21 @@ export default function GamePage() {
                 </p>
               </div>
             )}
+            </div>
           </div>
         </main>
 
         {/* ─── Right desktop chat sidebar ─── */}
-        <aside className="hidden lg:flex flex-col w-80 shrink-0 h-full overflow-hidden bg-surface-container-low/60 backdrop-blur-lg border-l border-outline-variant z-20">
+        <aside className="command-sidebar command-sidebar--right hidden lg:flex flex-col w-80 shrink-0 h-full overflow-hidden z-20">
           {renderChatBody()}
         </aside>
       </div>
 
       {/* ─── Mobile drawers ─── */}
-      <MobileDrawer open={menuOpen} onOpenChange={setMenuOpen} side="left" title="Menu">
+      <MobileDrawer open={menuOpen} onOpenChange={setMenuOpen} side="left" title="Bảng điều khiển">
         {renderSidebarBody()}
       </MobileDrawer>
-      <MobileDrawer open={chatOpen} onOpenChange={setChatOpen} side="bottom" title="Chat">
+      <MobileDrawer open={chatOpen} onOpenChange={setChatOpen} side="bottom" title="Liên lạc">
         <div className="flex flex-col h-[70vh]">{renderChatBody()}</div>
       </MobileDrawer>
 
@@ -1523,8 +1536,8 @@ export default function GamePage() {
 
       {/* ─── Bottom voting bar ─── */}
       {isVotingPhase && (
-        <div className="shrink-0 bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant p-3 sm:p-4 z-30">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="command-action-dock shrink-0 p-3 sm:p-4 z-30">
+          <div className="command-action-dock__inner max-w-4xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground font-mono hidden sm:block">
               {phase === 'teamVoting'
                 ? 'Bỏ phiếu duyệt nhóm (hết giờ = Đồng ý)...'
@@ -1537,7 +1550,7 @@ export default function GamePage() {
                     <Button
                       onClick={() => voteTeam('agree')}
                       disabled={voteAck?.phase === 'teamVoting'}
-                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
                     >
                       <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_up</span>
                       ĐỒNG Ý
@@ -1545,7 +1558,7 @@ export default function GamePage() {
                     <Button
                       onClick={() => voteTeam('reject')}
                       disabled={voteAck?.phase === 'teamVoting'}
-                      className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                     >
                       <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_down</span>
                       TỪ CHỐI
@@ -1557,7 +1570,7 @@ export default function GamePage() {
                       <Button
                         onClick={() => voteExecution('success')}
                         disabled={voteAck?.phase === 'execution'}
-                        className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
+                        className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined mr-1 sm:mr-2">check_circle</span>
                         HOÀN THÀNH
@@ -1566,7 +1579,7 @@ export default function GamePage() {
                         <Button
                           onClick={() => voteExecution('fail')}
                           disabled={voteAck?.phase === 'execution'}
-                          className="flex-1 sm:flex-initial px-4 sm:px-6 py-3 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
+                          className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
                         >
                           <span className="material-symbols-outlined mr-1 sm:mr-2">
                             local_fire_department

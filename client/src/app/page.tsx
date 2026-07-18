@@ -72,144 +72,67 @@ function LobbyInner() {
     setRoomId(id);
   };
 
+  const canEnterRoom = Boolean(roomId.trim() && playerName.trim());
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      {/* Theme toggle — top right */}
-      <div className="fixed top-4 right-4 z-10">
-        <ThemeToggle />
+    <main className="tactical-lobby">
+      <div className="tactical-lobby__topbar">
+        <div className="tactical-lobby__signal" aria-label="Hệ thống sẵn sàng"><span aria-hidden="true" />LIVE SESSION</div>
+        <ThemeToggle className="tactical-icon-button" />
       </div>
 
-      {/* Background radial gradients */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_50%,rgba(99,102,241,0.08),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_30%,rgba(74,225,118,0.05),transparent_40%)]" />
-      </div>
+      <section className="tactical-lobby__grid" aria-label="Thiết lập phòng chơi">
+        <div className="tactical-lobby__intro">
+          <div className="tactical-lobby__wordmark"><img src="/brand/logo-wordmark.svg" alt="Say Agile One More Time" className="h-10 sm:h-12 w-auto" /></div>
+          <p className="tactical-kicker">PHÒNG CHIẾN THUẬT · REAL-TIME</p>
+          <h1>Chọn phòng. Chọn đội. Giữ dự án sống sót.</h1>
+          <p className="tactical-lobby__lede">Một ván social deduction cho team Scrum — nơi mọi quyết định Sprint đều để lại dấu vết.</p>
+          <div className="tactical-lobby__protocol"><span className="material-symbols-outlined" aria-hidden="true">groups</span><span>5–10 người chơi</span></div>
+        </div>
 
-      {/* Main card */}
-      <div className="relative w-full max-w-md">
-        <div className="glass-panel rounded-xl p-8">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <img
-              src="/brand/logo-wordmark.svg"
-              alt="Say Agile One More Time"
-              className="h-12 mx-auto mb-2 dark:invert-0"
-            />
-            <p className="text-sm text-muted-foreground font-mono">
-              Real-time social deduction
-            </p>
+        <section className="tactical-lobby__access" aria-labelledby="access-title">
+          <div className="tactical-panel__heading">
+            <div><p className="tactical-kicker">01 · ACCESS NODE</p><h2 id="access-title">Vào phòng</h2></div>
+            <span className="material-symbols-outlined tactical-panel__icon" aria-hidden="true">vpn_key</span>
           </div>
 
-          {/* Error */}
           {error && (
-            <div className="mb-6 p-3 rounded-lg bg-error-container border border-error/30 text-error text-sm flex items-center justify-between">
-              <span>{error}</span>
-              <button onClick={clearError} className="text-error hover:text-error/80 ml-2">
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
+            <div className="tactical-error" role="alert"><span>{error}</span><button onClick={clearError} aria-label="Đóng thông báo lỗi"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
           )}
 
-          {/* Form */}
-          <div className="space-y-5">
-            {/* Player name */}
-            <div className="space-y-2">
-              <label
-                htmlFor="player-name"
-                className="text-xs font-semibold tracking-widest uppercase text-muted-foreground"
-              >
-                Your Name
-              </label>
-              <Input
-                id="player-name"
-                name="playerName"
-                placeholder="Enter your name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                maxLength={20}
-                className="h-11 font-sans"
-              />
+          <div className="tactical-form">
+            <div className="tactical-field-group">
+              <label htmlFor="player-name">Tên hiển thị</label>
+              <Input id="player-name" name="playerName" placeholder="Ví dụ: Minh" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={20} aria-required="true" className="tactical-field" />
+              <p className="tactical-field__hint">Tên này sẽ hiện với cả đội.</p>
             </div>
-
-            {/* Room code */}
-            <div className="space-y-2">
-              <label
-                htmlFor="room-code"
-                className="text-xs font-semibold tracking-widest uppercase text-muted-foreground"
-              >
-                Room Code
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  id="room-code"
-                  name="roomCode"
-                  placeholder="Enter room code"
-                  value={roomId}
-                  onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                  maxLength={20}
-                  className="h-11 font-mono text-base tracking-widest"
-                />
-                <Button
-                  variant="outline"
-                  onClick={generateRoomId}
-                  className="h-11 px-4 shrink-0"
-                >
-                  <span className="material-symbols-outlined text-xl">autorenew</span>
-                </Button>
+            <div className="tactical-field-group">
+              <div className="tactical-label-row"><label htmlFor="room-code">Mã phòng</label><button type="button" onClick={generateRoomId} className="tactical-text-action">Tạo mã mới</button></div>
+              <div className="tactical-room-input">
+                <Input id="room-code" name="roomCode" placeholder="ABC123" value={roomId} onChange={(e) => setRoomId(e.target.value.toUpperCase())} maxLength={20} aria-required="true" className="tactical-field tactical-field--code" />
+                <Button type="button" variant="outline" onClick={generateRoomId} className="tactical-generate-button" aria-label="Tạo mã phòng ngẫu nhiên" title="Tạo mã phòng ngẫu nhiên"><span className="material-symbols-outlined" aria-hidden="true">autorenew</span></Button>
               </div>
+              <p className="tactical-field__hint">Dùng mã có sẵn để tham gia, hoặc tạo một mã cho đội bạn.</p>
             </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3 pt-2">
-              <Button
-                className="flex-1 h-12 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold tracking-wide"
-                onClick={handleCreate}
-                disabled={!roomId.trim() || !playerName.trim() || isCreating}
-              >
-                {isCreating ? (
-                  <>
-                    <span className="material-symbols-outlined text-xl mr-2 animate-spin">progress_activity</span>
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-xl mr-2">add</span>
-                    Create Room
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 h-12 font-semibold tracking-wide border-primary/40 text-primary hover:bg-primary/10"
-                onClick={handleJoin}
-                disabled={!roomId.trim() || !playerName.trim() || isJoining}
-              >
-                {isJoining ? (
-                  <>
-                    <span className="material-symbols-outlined text-xl mr-2 animate-spin">progress_activity</span>
-                    Joining...
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-xl mr-2">login</span>
-                    Join
-                  </>
-                )}
-              </Button>
+            <div className="tactical-form__actions">
+              <Button className="tactical-action tactical-action--primary" onClick={handleCreate} disabled={!canEnterRoom || isCreating}><span className="material-symbols-outlined" aria-hidden="true">{isCreating ? 'progress_activity' : 'add'}</span>{isCreating ? 'Đang tạo' : 'Tạo phòng'}</Button>
+              <Button variant="outline" className="tactical-action tactical-action--secondary" onClick={handleJoin} disabled={!canEnterRoom || isJoining}><span className="material-symbols-outlined" aria-hidden="true">{isJoining ? 'progress_activity' : 'login'}</span>{isJoining ? 'Đang vào' : 'Tham gia'}</Button>
             </div>
+            <p className="tactical-entry-status" aria-live="polite">{canEnterRoom ? 'Sẵn sàng thiết lập phiên.' : 'Nhập tên và mã phòng để tiếp tục.'}</p>
           </div>
+        </section>
 
-          {/* Rules hint */}
-          <div className="mt-8 pt-6 border-t border-border text-center space-y-1">
-            <p className="text-xs text-muted-foreground font-mono">
-              5–10 players · Good vs Bad
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Good: complete 4 sprints · Bad: fail 2 sprints, 4 delays, or guess the SM
-            </p>
+        <section className="tactical-lobby__rules" aria-labelledby="rules-title">
+          <div className="tactical-panel__heading"><div><p className="tactical-kicker">02 · WIN CONDITIONS</p><h2 id="rules-title">Luật tóm tắt</h2></div><span className="material-symbols-outlined tactical-panel__icon" aria-hidden="true">fact_check</span></div>
+          <div className="tactical-rules-list">
+            <p><span className="tactical-rule-marker tactical-rule-marker--good" />Phe tốt hoàn thành 4 Sprint.</p>
+            <p><span className="tactical-rule-marker tactical-rule-marker--bad" />Phe xấu thắng khi 2 Sprint thất bại.</p>
+            <p><span className="tactical-rule-marker" />4 lần delay hoặc đoán đúng Scrum Master cũng kết thúc ván.</p>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+
+        <aside className="tactical-lobby__note"><span className="material-symbols-outlined" aria-hidden="true">share</span><p>Tạo phòng xong, chia sẻ mã hoặc link mời cho team.</p></aside>
+      </section>
+    </main>
   );
 }

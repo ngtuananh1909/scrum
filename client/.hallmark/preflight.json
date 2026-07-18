@@ -1,0 +1,9 @@
+{
+  "date": "2026-07-18",
+  "framework": "Next.js 16.2.9 app router",
+  "fonts": ["Geist", "Geist Mono"],
+  "palette": "existing indigo/green/red light-dark CSS token system",
+  "motion": "motion-cut; no motion library detected",
+  "spacing": "Tailwind utilities plus Hallmark 4pt alias scale",
+  "preserve": ["font stack", "theme infrastructure", "game mechanics", "routes"]
+}

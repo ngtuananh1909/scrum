@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "../../tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -429,4 +430,524 @@
 /* ─── Text color on saturated colored backgrounds (vote chips, FAB tag) ─── */
 .on-color {
   color: var(--on-color-button);
+}
+
+/* Hallmark · pre-emit critique: P4 H5 E4 S4 R4 V4
+ * genre: atmospheric · macrostructure: Bento Grid (lobby) / Command Grid (game)
+ * theme: Midnight · contrast: pass (40–41) · honest: pass (46) · chrome: pass (47)
+ * tokens: pass (48) · responsive: pass (34, 49–52)
+ */
+
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  font-family: var(--font-body);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-command-focus);
+  outline-offset: 2px;
+}
+
+.tactical-kicker {
+  color: var(--color-command-muted);
+  font-family: var(--font-outlier);
+  font-size: var(--text-label);
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+/* ─── Command-entry lobby ─── */
+.tactical-lobby {
+  background-color: var(--color-command-canvas);
+  color: var(--color-command-ink);
+  min-height: 100dvh;
+  padding: var(--space-md);
+}
+
+.tactical-lobby__topbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto var(--space-xl);
+  max-width: 78rem;
+}
+
+.tactical-lobby__signal,
+.tactical-lobby__protocol {
+  align-items: center;
+  color: var(--color-command-muted);
+  display: inline-flex;
+  font-family: var(--font-outlier);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  gap: var(--space-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tactical-lobby__signal > span {
+  background-color: var(--color-command-success);
+  border-radius: 999px;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.tactical-icon-button {
+  border: var(--rule-command) solid var(--color-command-rule);
+  border-radius: var(--radius-control);
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+.tactical-lobby__grid {
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-areas:
+    "intro"
+    "access"
+    "rules"
+    "note";
+  margin: 0 auto;
+  max-width: 78rem;
+}
+
+.tactical-lobby__intro,
+.tactical-lobby__access,
+.tactical-lobby__rules,
+.tactical-lobby__note {
+  background-color: var(--color-command-surface);
+  border: var(--rule-command) solid var(--color-command-rule);
+  border-radius: var(--radius-command);
+  min-width: 0;
+}
+
+.tactical-lobby__intro {
+  display: flex;
+  flex-direction: column;
+  grid-area: intro;
+  justify-content: space-between;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.tactical-lobby__wordmark {
+  align-items: center;
+  display: flex;
+  min-height: 3rem;
+}
+
+.tactical-lobby__intro .tactical-kicker {
+  margin-top: var(--space-2xl);
+}
+
+.tactical-lobby h1,
+.tactical-lobby h2,
+.command-phase-title {
+  font-family: var(--font-display);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.tactical-lobby h1 {
+  font-size: var(--text-display);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  margin: var(--space-xs) 0 var(--space-lg);
+  max-width: 12ch;
+  min-width: 0;
+}
+
+.tactical-lobby__lede {
+  color: var(--color-command-muted);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 47ch;
+}
+
+.tactical-lobby__protocol {
+  border-top: var(--rule-command) solid var(--color-command-rule);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+}
+
+.tactical-lobby__access {
+  grid-area: access;
+  padding: var(--space-lg);
+}
+
+.tactical-lobby__rules {
+  grid-area: rules;
+  padding: var(--space-lg);
+}
+
+.tactical-panel__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.tactical-panel__heading h2 {
+  font-size: var(--text-panel);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: var(--space-2xs) 0 0;
+}
+
+.tactical-panel__icon {
+  color: var(--color-command-accent);
+  flex: none;
+}
+
+.tactical-form {
+  display: grid;
+  gap: var(--space-md);
+}
+
+.tactical-field-group {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.tactical-field-group label {
+  color: var(--color-command-ink);
+  font-size: var(--text-small);
+  font-weight: 650;
+}
+
+.tactical-label-row {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: space-between;
+}
+
+.tactical-field {
+  background-color: var(--color-command-canvas) !important;
+  border-color: var(--color-command-rule) !important;
+  border-width: var(--rule-command) !important;
+  color: var(--color-command-ink);
+  height: 2.75rem !important;
+  outline: 2px solid transparent !important;
+  outline-offset: 1px;
+  padding-inline: var(--space-sm) !important;
+  transition: background-color var(--dur-short) var(--ease-out);
+}
+
+.tactical-field:focus-visible {
+  background-color: var(--color-command-surface-raised) !important;
+  outline-color: var(--color-command-focus) !important;
+}
+
+.tactical-field--code {
+  font-family: var(--font-outlier);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tactical-field__hint,
+.tactical-entry-status {
+  color: var(--color-command-muted);
+  font-size: var(--text-label);
+  line-height: 1.4;
+  margin: 0;
+  min-height: 1lh;
+}
+
+.tactical-room-input {
+  display: grid;
+  gap: var(--space-xs);
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+}
+
+.tactical-generate-button {
+  background-color: var(--color-command-surface-raised) !important;
+  border-color: var(--color-command-rule) !important;
+  color: var(--color-command-ink) !important;
+  height: 2.75rem !important;
+  min-width: 2.75rem;
+  padding: 0 !important;
+}
+
+.tactical-text-action {
+  color: var(--color-command-accent);
+  font-family: var(--font-outlier);
+  font-size: var(--text-label);
+  min-height: 2.75rem;
+  padding-inline: var(--space-xs);
+  white-space: nowrap;
+}
+
+.tactical-form__actions {
+  display: grid;
+  gap: var(--space-xs);
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: var(--space-xs);
+}
+
+.tactical-action {
+  font-weight: 700 !important;
+  gap: var(--space-xs) !important;
+  height: 2.75rem !important;
+  letter-spacing: 0.01em;
+  min-width: 0;
+  padding-inline: var(--space-md) !important;
+  transition: background-color var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out), transform var(--dur-micro) var(--ease-out) !important;
+  white-space: nowrap;
+}
+
+.tactical-action:active,
+.tactical-generate-button:active {
+  transform: translateY(1px);
+}
+
+.tactical-action--primary {
+  background-color: var(--color-command-accent) !important;
+  color: var(--color-command-accent-ink) !important;
+}
+
+.tactical-action--secondary {
+  background-color: var(--color-command-surface-raised) !important;
+  border-color: var(--color-command-rule) !important;
+  color: var(--color-command-ink) !important;
+}
+
+.tactical-action:disabled,
+.tactical-generate-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tactical-error {
+  align-items: center;
+  background-color: var(--error-container);
+  border: var(--rule-command) solid var(--color-command-danger);
+  border-radius: var(--radius-control);
+  color: var(--on-error-container);
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-xs);
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+}
+
+.tactical-error button {
+  color: inherit;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+.tactical-rules-list {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.tactical-rules-list p {
+  align-items: flex-start;
+  color: var(--color-command-muted);
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-xs);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.tactical-rule-marker {
+  background-color: var(--color-command-accent);
+  border-radius: 999px;
+  flex: none;
+  height: 0.5rem;
+  margin-top: 0.35rem;
+  width: 0.5rem;
+}
+
+.tactical-rule-marker--good { background-color: var(--color-command-success); }
+.tactical-rule-marker--bad { background-color: var(--color-command-danger); }
+
+.tactical-lobby__note {
+  align-items: flex-start;
+  color: var(--color-command-muted);
+  display: flex;
+  font-size: var(--text-small);
+  gap: var(--space-sm);
+  grid-area: note;
+  line-height: 1.5;
+  padding: var(--space-md);
+}
+
+.tactical-lobby__note span { color: var(--color-command-accent); }
+.tactical-lobby__note p { margin: 0; }
+
+/* ─── In-room tactical board ─── */
+.command-room {
+  background-color: var(--color-command-canvas);
+  color: var(--color-command-ink);
+}
+
+.command-topbar,
+.command-sidebar,
+.command-action-dock {
+  background-color: var(--color-command-surface);
+  border-color: var(--color-command-rule);
+}
+
+.command-topbar {
+  border-bottom: var(--rule-command) solid var(--color-command-rule);
+}
+
+.command-sidebar--left { border-right: var(--rule-command) solid var(--color-command-rule); }
+.command-sidebar--right { border-left: var(--rule-command) solid var(--color-command-rule); }
+.command-action-dock { border-top: var(--rule-command) solid var(--color-command-rule); }
+
+.command-canvas {
+  background-color: var(--color-command-canvas);
+}
+
+.command-canvas__inner {
+  margin: 0 auto;
+  max-width: 64rem;
+}
+
+.command-phase-header {
+  align-items: flex-end;
+  border-bottom: var(--rule-command) solid var(--color-command-rule);
+  display: flex;
+  gap: var(--space-md);
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+  padding: var(--space-xs) 0 var(--space-md);
+}
+
+.command-phase-title {
+  font-size: clamp(1.45rem, 4vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin: var(--space-2xs) 0 0;
+  min-width: 0;
+}
+
+.command-phase-header__meta {
+  color: var(--color-command-muted);
+  display: grid;
+  font-family: var(--font-outlier);
+  font-size: var(--text-label);
+  gap: var(--space-3xs);
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.command-phase-header__meta strong {
+  color: var(--color-command-accent);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.command-progress-rail,
+.command-timer-slot {
+  margin: 0 auto var(--space-md);
+  max-width: 42rem;
+}
+
+.command-board {
+  margin: 0 auto;
+  max-width: 56rem;
+}
+
+.command-board .glass-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background-color: var(--color-command-surface);
+  border-color: var(--color-command-rule);
+}
+
+.command-board .status-strip-villager,
+.command-board .status-strip-werewolf,
+.command-board .status-strip-system,
+.command-board .status-strip-po,
+.command-board .status-strip-nominated,
+.command-board .status-strip-neutral {
+  border-left-width: var(--rule-command);
+}
+
+.command-sidebar .font-mono,
+.command-topbar .font-mono,
+.command-action-dock .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.command-room input {
+  border-width: var(--rule-command);
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+
+.command-room input:focus-visible {
+  outline-color: var(--color-command-focus);
+}
+
+.command-action-dock__inner > div > button {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tactical-lobby__access,
+  .tactical-lobby__rules,
+  .tactical-lobby__note {
+    transition: background-color var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+  }
+
+  .tactical-lobby__access:hover,
+  .tactical-lobby__rules:hover,
+  .tactical-lobby__note:hover {
+    background-color: var(--color-command-surface-raised);
+    transform: translateY(-1px);
+  }
+
+  .tactical-action--primary:hover { background-color: var(--primary-container) !important; }
+  .tactical-action--secondary:hover,
+  .tactical-generate-button:hover { background-color: var(--color-command-surface-strong) !important; }
+}
+
+@media (min-width: 40rem) {
+  .tactical-lobby { padding: var(--space-lg); }
+  .tactical-form__actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .command-phase-header { margin-bottom: var(--space-lg); padding-top: var(--space-sm); }
+}
+
+@media (min-width: 64rem) {
+  .tactical-lobby__grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.95fr);
+    grid-template-areas:
+      "intro access"
+      "intro rules"
+      "note rules";
+  }
+
+  .tactical-lobby__intro { min-height: 34rem; }
+  .tactical-lobby__note { align-self: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+  }
 }
