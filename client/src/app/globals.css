@@ -491,6 +491,23 @@ body {
   text-transform: uppercase;
 }
 
+.tactical-lobby__guide-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-block-start: var(--space-lg);
+  color: var(--color-command-success);
+  font-size: var(--text-small);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tactical-lobby__guide-link:focus-visible {
+  outline: 2px solid var(--color-command-focus);
+  outline-offset: 3px;
+}
+
 .tactical-lobby__signal > span {
   background-color: var(--color-command-success);
   border-radius: 999px;

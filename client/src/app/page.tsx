@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/button';
@@ -88,6 +89,7 @@ function LobbyInner() {
           <h1>Chọn phòng. Chọn đội. Giữ dự án sống sót.</h1>
           <p className="tactical-lobby__lede">Một ván social deduction cho team Scrum — nơi mọi quyết định Sprint đều để lại dấu vết.</p>
           <div className="tactical-lobby__protocol"><span className="material-symbols-outlined" aria-hidden="true">groups</span><span>5–10 người chơi</span></div>
+          <Link href="/how-to-play" className="tactical-lobby__guide-link">Cách chơi <span aria-hidden="true">→</span></Link>
         </div>
 
         <section className="tactical-lobby__access" aria-labelledby="access-title">
@@ -125,9 +127,9 @@ function LobbyInner() {
         <section className="tactical-lobby__rules" aria-labelledby="rules-title">
           <div className="tactical-panel__heading"><div><p className="tactical-kicker">02 · WIN CONDITIONS</p><h2 id="rules-title">Luật tóm tắt</h2></div><span className="material-symbols-outlined tactical-panel__icon" aria-hidden="true">fact_check</span></div>
           <div className="tactical-rules-list">
-            <p><span className="tactical-rule-marker tactical-rule-marker--good" />Phe tốt hoàn thành 4 Sprint.</p>
-            <p><span className="tactical-rule-marker tactical-rule-marker--bad" />Phe xấu thắng khi 2 Sprint thất bại.</p>
-            <p><span className="tactical-rule-marker" />4 lần delay hoặc đoán đúng Scrum Master cũng kết thúc ván.</p>
+            <p><span className="tactical-rule-marker tactical-rule-marker--good" />Phe tốt hoàn thành 3 Sprint, rồi bảo vệ Scrum Master ở vòng lật kèo.</p>
+            <p><span className="tactical-rule-marker tactical-rule-marker--bad" />Phe xấu thắng khi 3 Sprint cháy deadline.</p>
+            <p><span className="tactical-rule-marker" />4 lần delay, hết 4 Sprint chưa đủ 3 thắng, hoặc đoán đúng Scrum Master cũng kết thúc ván.</p>
           </div>
         </section>
 

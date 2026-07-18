@@ -1,6 +1,17 @@
 [
   {
     "date": "2026-07-18",
+    "scope": "page",
+    "macrostructure": "Narrative Workflow",
+    "theme": "Terminal",
+    "genre": "atmospheric",
+    "brief": "Bilingual first-time-player guide derived from game rules PDF",
+    "enrichment": "none",
+    "nav": "N9 Edge-aligned minimal",
+    "footer": "Ft2 Inline-rule single line"
+  },
+  {
+    "date": "2026-07-18",
     "scope": "app",
     "macrostructure": "Bento Grid / Command Grid",
     "theme": "Midnight",
