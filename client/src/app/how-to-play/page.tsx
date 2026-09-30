@@ -2,15 +2,16 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import {
-  GAME_LIMITS,
-  REQUIRES_DOUBLE_FAIL,
-  ROLES,
-  ROLE_DESCRIPTIONS,
-  SPRINT_SIZES,
-  type PlayerRole,
-} from '@/lib/types';
+import { GAME_CONFIG } from '@/game/config';
+import { ROLES, ROLE_DESCRIPTIONS, type PlayerRole } from '@/lib/types';
 import styles from './how-to-play.module.css';
+
+const GAME_LIMITS = {
+  winsRequired: GAME_CONFIG.goodWinsForAssassination,
+  delaysToLose: GAME_CONFIG.badWinRejectedTeams,
+} as const;
+const SPRINT_SIZES = GAME_CONFIG.sprintSizes;
+const REQUIRES_DOUBLE_FAIL: readonly number[] = [7, 8, 9, 10];
 
 type Language = 'vi' | 'en';
 
@@ -53,12 +54,12 @@ const guideCopy: Record<Language, GuideCopy> = {
     hero: 'Tập hợp đội. Cứu dự án.',
     lede: 'Say Agile One More Time là trò chơi suy luận xã hội cho team Scrum. Mỗi người có một vai trò bí mật; mọi cuộc họp và mọi lá phiếu Sprint đều có thể đổi cục diện.',
     players: '5–10 người chơi',
-    sprints: '4 Sprint',
+    sprints: '4 Sprint chính + 1 tiebreak nếu hòa',
     objectiveTitle: 'Mục tiêu của cả bàn',
     objectiveBody: 'Bạn thuộc một trong hai phe bí mật. Scrum Team phối hợp để hoàn thành dự án. Team Phá Dự Án cố gắng làm cháy deadline, kéo dài tranh cãi, hoặc lật kèo ở phút cuối.',
     goodWin: `Scrum Team cần hoàn thành ${GAME_LIMITS.winsRequired} Sprint. Sau đó, Người trễ task có một lần chỉ điểm Scrum Master. Đoán sai, Scrum Team thắng.`,
     badWin: `Team Phá Dự Án thắng khi có ${GAME_LIMITS.winsRequired} Sprint cháy deadline, hoặc khi đội bác bỏ đề xuất đủ ${GAME_LIMITS.delaysToLose} lần.`,
-    finalGuess: `Nếu hết ${GAME_LIMITS.totalSprints} Sprint mà Scrum Team chưa đạt ${GAME_LIMITS.winsRequired} Sprint thành công, phe Phá Dự Án thắng.`,
+    finalGuess: `Nếu sau Sprint 4 hai phe hòa 2–2, bàn chơi thêm Sprint 5 với quy mô đội của Sprint 4 để phân định.`,
     sprintFlowTitle: 'Một Sprint diễn ra thế nào',
     sprintFlowBody: 'Bốn Sprint lặp lại cùng một nhịp. Product Owner luân phiên dẫn dắt, nhưng mọi người phải đọc được động cơ phía sau mỗi đề xuất.',
     steps: [
@@ -87,12 +88,12 @@ const guideCopy: Record<Language, GuideCopy> = {
     hero: 'Assemble the team. Save the project.',
     lede: 'Say Agile One More Time is a Scrum-flavoured social deduction game. Every player has a secret role; every planning meeting and Sprint vote can change the outcome.',
     players: '5–10 players',
-    sprints: '4 Sprints',
+    sprints: '4 regular Sprints + 1 tiebreak if tied',
     objectiveTitle: 'The table’s objective',
     objectiveBody: 'You belong to one of two hidden teams. The Scrum Team tries to deliver the project. The Disruption Team tries to burn deadlines, prolong disagreement, or reverse the result at the end.',
     goodWin: `The Scrum Team must complete ${GAME_LIMITS.winsRequired} Sprints. Then the Delayed Task gets one chance to identify the Scrum Master. A wrong guess gives the Scrum Team the win.`,
     badWin: `The Disruption Team wins after ${GAME_LIMITS.winsRequired} failed Sprints or ${GAME_LIMITS.delaysToLose} rejected team proposals.`,
-    finalGuess: `If ${GAME_LIMITS.totalSprints} Sprints end before the Scrum Team reaches ${GAME_LIMITS.winsRequired} successes, the Disruption Team wins.`,
+    finalGuess: `If the score is 2–2 after Sprint 4, play a fifth tiebreak Sprint using Sprint 4's team size.`,
     sprintFlowTitle: 'How a Sprint works',
     sprintFlowBody: 'All four Sprints follow the same rhythm. The Product Owner rotates, but everyone must read the motive behind every proposed team.',
     steps: [
@@ -164,7 +165,7 @@ export default function HowToPlayPage() {
         <div className={styles.heroFacts} aria-label={language === 'vi' ? 'Thông tin ván chơi' : 'Game facts'}>
           <span>{copy.players}</span>
           <span>{copy.sprints}</span>
-          <span>{GAME_LIMITS.winsRequired}/{GAME_LIMITS.totalSprints} {language === 'vi' ? 'Sprint để thắng' : 'Sprints to win'}</span>
+          <span>{GAME_LIMITS.winsRequired}/4+1 {language === 'vi' ? 'Sprint để thắng' : 'Sprints to win'}</span>
         </div>
       </section>
 

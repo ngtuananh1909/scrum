@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { getAvatarUrl } from '@/lib/utils';
 
-// Collapsible sidebar panel showing past sprints (proposed team + outcome).
+// Collapsible sidebar panel showing public Sprint outcomes and team membership.
 export function SprintHistory() {
   const sprintHistory = useGameStore((s) => s.sprintHistory);
   const players = useGameStore((s) => s.players);
@@ -25,7 +25,7 @@ export function SprintHistory() {
             history
           </span>
           <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
-            Sprint History ({sprintHistory.length})
+            Lịch sử Sprint ({sprintHistory.length})
           </span>
         </div>
         <span
@@ -43,7 +43,7 @@ export function SprintHistory() {
             .reverse()
             .map((entry) => (
               <div
-                key={entry.sprintIndex}
+                key={entry.sprintNumber}
                 className={`rounded-lg p-3 border ${
                   entry.outcome === 'success'
                     ? 'border-secondary/30 bg-secondary/5'
@@ -52,7 +52,7 @@ export function SprintHistory() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-mono text-xs font-semibold text-foreground">
-                    Sprint {entry.sprintIndex}
+                    Sprint {entry.sprintNumber}
                   </span>
                   <span
                     className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
@@ -65,10 +65,10 @@ export function SprintHistory() {
                   </span>
                 </div>
                 <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5">
-                  Team ({entry.proposedTeam.length})
+                  Nhóm ({entry.teamIds.length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {entry.proposedTeam.map((id) => (
+                  {entry.teamIds.map((id) => (
                     <div
                       key={id}
                       className="flex items-center gap-1 bg-surface-container rounded-full pl-1 pr-2 py-0.5"

@@ -1,44 +1,11 @@
-# Architecture & Data Flow
+# Architecture
 
-## High-Level Flow
+The current architecture and setup are summarized in the [root README](../../README.md). The canonical behavior contract is [SYSTEM_BEHAVIOR_SPEC.md](../../client/docs/SYSTEM_BEHAVIOR_SPEC.md).
 
-```
-Browser ──── REST API ──► Next.js API Routes ──► Supabase Postgres
-   ▲                                                    │
-   └──── Supabase Realtime (postgres_changes) ──────────┘
-```
+- client/src/game contains pure phase, role, vote, timer, and visibility rules.
+- client/src/server verifies Supabase Anonymous Auth identity and persists commands in locked Postgres transactions.
+- supabase/migrations defines the internal game state, unique ballot rows, safe room projection, private player rows, audience-scoped messages, RLS, and Realtime publication.
+- client/src/store/gameStore.ts combines viewer snapshots, authorized Realtime rows, and polling fallback for the UI.
+- client/src/app/api/rooms exposes create, join, viewer snapshot, versioned commands, chat, presence, and ended-role reveal. Old action routes return HTTP 410.
 
-## Supabase Schema
-
-### `rooms` table
-- `id`: UUID, primary key
-- `state`: JSONB — contains full Room object (players, phase, votes, sprint, scores)
-- `last_updated`: timestamp
-
-### `messages` table
-- `id`: serial primary key
-- `room_id`: UUID, foreign key to rooms
-- `player_id`: UUID
-- `player_name`: text
-- `text`: text
-- `created_at`: timestamp
-
-## Realtime Subscriptions
-
-In `gameStore.ts:subscribeToRoom()`:
-
-1. Subscribe to `rooms` table with filter `id=eq.${roomId}` for UPDATE events
-2. Subscribe to `messages` table with filter `room_id=eq.${roomId}` for INSERT events
-3. On any subscription error (CHANNEL_ERROR, TIMED_OUT, CLOSED), fallback to 2s polling
-
-## State Flow
-
-1. Client calls REST API → server reads/writes room state in Supabase
-2. Server returns updated state + player metadata
-3. Client calls `setRoomFromResponse()` to sync Zustand store
-4. Supabase Realtime broadcasts room state change to all other clients
-5. Other clients receive UPDATE event and call `setRoomFromResponse()` on their side
-
-## API URL
-
-Client uses `NEXT_PUBLIC_API_URL` env var. Defaults to empty string (same origin in dev).
+Only the public projection and RLS-authorized private/message rows reach browser Realtime. The client never receives the full internal room state.

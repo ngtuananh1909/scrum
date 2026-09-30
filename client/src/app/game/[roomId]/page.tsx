@@ -1,1701 +1,882 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { useGameStore } from '@/store/gameStore';
+import { useParams, useRouter } from 'next/navigation';
+import { useGameStore, type LobbyPublicState, type RoomMessage } from '@/store/gameStore';
+import type { GameEvent, GamePhase, PublicGameState } from '@/game/types';
+import { factionForRole } from '@/game/presets';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LobbyRoomPanel } from '@/components/lobby/LobbyRoomPanel';
+import { RoleConfigCounter } from '@/components/RoleConfigCounter';
 import { RoleRevealPopup } from '@/components/RoleRevealPopup';
 import { SkillPanel } from '@/components/SkillFab';
 import { SkillResultToast } from '@/components/SkillResultToast';
-import { RoleConfigCounter } from '@/components/RoleConfigCounter';
 import { MobileDrawer } from '@/components/MobileDrawer';
-import { TimerBar } from '@/components/TimerBar';
-import { VoteFeedback } from '@/components/VoteFeedback';
 import { SprintHistory } from '@/components/SprintHistory';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { getSprintSize, ROLE_DESCRIPTIONS, TIMER_DEFAULTS, type PlayerRole } from '@/lib/types';
+import { VoteFeedback } from '@/components/VoteFeedback';
+import { ConnectionStatus, type GameConnectionState, GamePhaseHeader } from '@/components/game/GamePhaseHeader';
+import { ContextActionBar } from '@/components/game/ContextActionBar';
+import { TeamVoteBoard } from '@/components/game/TeamVoteBoard';
+import { ExecutionReveal } from '@/components/game/ExecutionReveal';
+import { EndGameRecap } from '@/components/game/EndGameRecap';
+import { RoleGuidance } from '@/components/game/RoleGuidance';
+import { GameSoundToggle } from '@/components/game/GameSoundToggle';
+import { ReactionBar } from '@/components/game/ReactionBar';
 import { getAvatarUrl } from '@/lib/utils';
 
-const PHASE_LABELS: Record<string, string> = {
-  lobby: 'Lobby',
-  night: 'Giờ Tan Ca',
-  planning: 'Vào Ca (Planning)',
-  teamVoting: 'Biểu quyết duyệt nhóm',
-  execution: 'Thực thi Sprint',
-  sprintResult: 'Kết quả Sprint',
-  betweenSprintDiscussion: 'Bàn luận giữa Sprint',
-  discussion: 'Thảo luận lật kèo',
-  ended: 'Game Over',
+type ChatTab = 'public' | 'bad' | 'activity' | 'skills';
+
+const PHASE_TEXT: Record<GamePhase, { label: string; title: string; instruction: string }> = {
+  roleReveal: {
+    label: 'Vai trò bí mật',
+    title: 'Ghi nhớ vai trò của bạn',
+    instruction: 'Vai trò chỉ hiển thị trên thiết bị của bạn. Hãy đọc hướng dẫn trước khi bắt đầu.',
+  },
+  firstNight: {
+    label: 'Giờ tan ca đầu tiên',
+    title: 'Mỗi vai trò có thông tin riêng',
+    instruction: 'Một số vai trò cần dùng kỹ năng trước khi vào Sprint Planning.',
+  },
+  planningDiscussion: {
+    label: 'Thảo luận Planning',
+    title: 'Cả phòng cùng bàn kế hoạch',
+    instruction: 'Thảo luận trong 180 giây. Sau đó PO sẽ có riêng 45 giây để chọn đội Sprint.',
+  },
+  teamSelection: {
+    label: 'PO chọn đội',
+    title: 'Chọn đội Sprint',
+    instruction: 'Chỉ PO mới chốt được đội. Chọn đúng số người trước khi hết giờ.',
+  },
+  teamVoting: {
+    label: 'Biểu quyết đội',
+    title: 'Phiếu đang được niêm phong',
+    instruction: 'Chọn đồng ý hoặc từ chối. Mỗi người chỉ nhìn thấy trạng thái đã bỏ phiếu, chưa thấy lựa chọn của ai.',
+  },
+  teamVoteReveal: {
+    label: 'Mở phiếu đội',
+    title: 'Kết quả biểu quyết nhóm',
+    instruction: 'Mọi lựa chọn được mở cùng lúc trong thời gian ngắn.',
+  },
+  execution: {
+    label: 'Thực thi Sprint',
+    title: 'Bỏ phiếu kín về kết quả',
+    instruction: 'Chỉ người trong đội Sprint mới bỏ phiếu. Lá phiếu sẽ được xáo trước khi công bố.',
+  },
+  executionReveal: {
+    label: 'Lật phiếu ẩn danh',
+    title: 'Các lá phiếu đã được xáo',
+    instruction: 'Kết quả hiện ra mà không gắn lá phiếu với người chơi.',
+  },
+  sprintResult: {
+    label: 'Kết quả Sprint',
+    title: 'Cùng xem lại Sprint vừa rồi',
+    instruction: 'Một số vai trò có thể dùng kỹ năng trong cửa sổ kết quả trước Planning tiếp theo.',
+  },
+  assassination: {
+    label: 'Cơ hội lật kèo',
+    title: 'Phe Phá Dự Án có 60 giây',
+    instruction: 'Người trễ task có thể chỉ điểm Scrum Master. Nếu không đoán trong thời gian này, Phe Scrum thắng.',
+  },
+  ended: {
+    label: 'Ván đã kết thúc',
+    title: 'Cùng xem lại diễn biến',
+    instruction: 'Kết quả và vai trò được mở sau khi ván kết thúc.',
+  },
 };
+
+function connectionView(status: string | undefined): GameConnectionState {
+  if (status === 'online' || status === 'connected') return 'connected';
+  if (status === 'reconnecting') return 'reconnecting';
+  if (status === 'offline') return 'offline';
+  return 'connecting';
+}
+
+function eventText(event: GameEvent): string {
+  switch (event.type) {
+    case 'phaseChanged': {
+      const phase = event.data.phase;
+      return typeof phase === 'string' && phase in PHASE_TEXT
+        ? `Chuyển sang: ${PHASE_TEXT[phase as GamePhase].label}.`
+        : 'Giai đoạn chơi đã thay đổi.';
+    }
+    case 'teamRejected':
+      return 'Nhóm bị từ chối.';
+    case 'teamAccepted':
+      return 'Nhóm được duyệt.';
+    case 'sprintResolved':
+      return event.data.outcome === 'success' ? 'Sprint thành công.' : 'Sprint thất bại.';
+    case 'gameEnded':
+      return 'Ván chơi đã kết thúc.';
+    case 'skillUsed':
+      return 'Một kỹ năng đã được sử dụng.';
+    case 'reaction':
+      return `${event.data.emoji ?? '✨'} · Một người chơi đã bày tỏ cảm xúc.`;
+  }
+}
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
 
 export default function GamePage() {
   const params = useParams();
-  const roomId = params.roomId as string;
-
+  const roomId = String(params.roomId ?? '');
+  const router = useRouter();
+  const store = useGameStore();
   const {
-    players,
-    phase,
-    currentSprint,
-    proposedTeam,
-    currentPO,
-    myRole,
-    isGood,
-    saboteurIds,
-    goodWins,
-    badWins,
-    consecutiveDelays,
-    techDebtActive,
-    deadlineSilenced,
-    sepSilencedPlayerId,
-    isSilenced,
-    pmOverrideUsed,
-    pmDeferredThisSprint,
-    ttsFollowTargetId,
-    voteAck,
-    votes,
-    phaseStartedAt,
-    phaseDeadlineAt,
-    poSelectDeadlineAt,
-    phaseRemainingMs,
-    sprintHistory,
-    gameLog,
-    discussionAdvanceVotes,
-    proposeTeam,
-    voteTeam,
-    voteExecution,
-    advanceToPlanning,
-    advanceFromDiscussion,
-    saboteurGuess,
-    startGame,
-    subscribeToRoom,
-    unsubscribeFromRoom,
-    rejoinRoom,
-    hydrateFromCache,
-    ensurePlayerId,
-    setRoomFromResponse,
-    resetRoom,
-    leaveRoom,
+    publicState,
+    privateState,
+    endReveal,
     playerId,
-    roomId: storeRoomId,
     playerName,
+    isHost,
+    isSpectator,
+    playerReady,
+    connectionStatus,
+    authStatus,
     messages,
-    sendMessage,
-    renamePlayer,
-    showRoleReveal,
-  } = useGameStore();
+    badMessages,
+    canUseBadFactionChat,
+    gameLog,
+    sprintHistory,
+    phaseRemainingMs,
+    phaseDeadlineAt,
+    phaseStartedAt,
+    voteAck,
+    error,
+  } = store;
 
-  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [chatTab, setChatTab] = useState<'chat' | 'logs' | 'skills'>('chat');
+  const lobby = publicState?.phase === 'lobby' ? publicState as LobbyPublicState : null;
+  const game = publicState && publicState.phase !== 'lobby' ? publicState as PublicGameState : null;
+  const phase = publicState?.phase ?? store.phase;
+  const inPersonMode = store.roomSettings?.communicationMode === 'inPerson';
+  const players = publicState?.players ?? store.players;
+  const allowedActions = privateState?.allowedActions ?? store.allowedActions;
+  const role = privateState?.ownRole ?? store.myRole;
+  const faction = privateState?.faction ?? store.faction;
+  const knownRoles = privateState?.knownRoles ?? store.knownRoles;
+  const isSilenced = Boolean(
+    game?.chatPolicy.allMuted || (playerId && game?.chatPolicy.mutedPlayerId === playerId),
+  );
+
+  const [teamDraft, setTeamDraft] = useState<{ phaseVersion: number; ids: string[] }>({ phaseVersion: -1, ids: [] });
+  const [chatTab, setChatTab] = useState<ChatTab>('public');
   const [chatDraft, setChatDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [shareToast, setShareToast] = useState<string | null>(null);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameDraft, setRenameDraft] = useState('');
-  const [renameBusy, setRenameBusy] = useState(false);
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [endModalOpen, setEndModalOpen] = useState(true);
-  const [resetBusy, setResetBusy] = useState(false);
-  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const [shareToast, setShareToast] = useState('');
+  const [endRevealError, setEndRevealError] = useState('');
+  const chatListRef = useRef<HTMLDivElement>(null);
+  const gamePhaseVersion = game?.phaseVersion ?? null;
+  const currentRoomId = store.roomId;
+  const rejoinRoom = store.rejoinRoom;
+  const subscribeToRoom = store.subscribeToRoom;
+  const unsubscribeFromRoom = store.unsubscribeFromRoom;
+  const fetchEndReveal = store.fetchEndReveal;
 
-  // Mount: ensure UUID, hydrate from cache (instant render), then fire rejoin POST.
+  // Route params are the room identity. The store owns browser auth and seat recovery.
   useEffect(() => {
-    ensurePlayerId();
-  }, [ensurePlayerId]);
+    if (roomId && currentRoomId !== roomId) void rejoinRoom(roomId);
+  }, [roomId, currentRoomId, rejoinRoom]);
 
   useEffect(() => {
-    if (roomId && storeRoomId !== roomId) {
-      // Instant hydration from sessionStorage — no white flash on reload.
-      hydrateFromCache(roomId);
-      // Live refresh in background; cache stays visible until response lands.
-      rejoinRoom(roomId);
-    }
-  }, [roomId, storeRoomId, hydrateFromCache, rejoinRoom]);
+    if (!roomId || currentRoomId !== roomId) return;
+    subscribeToRoom();
+    return () => unsubscribeFromRoom();
+  }, [roomId, currentRoomId, subscribeToRoom, unsubscribeFromRoom]);
 
   useEffect(() => {
-    if (storeRoomId) {
-      subscribeToRoom();
-      return () => unsubscribeFromRoom();
-    }
-  }, [storeRoomId, subscribeToRoom, unsubscribeFromRoom]);
+    if (chatListRef.current) chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+  }, [chatTab, messages.length, badMessages.length, gameLog.length]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    if (phase !== 'ended' || gamePhaseVersion == null || endReveal) return;
+    let active = true;
+    void fetchEndReveal()
+      .then(() => {
+        if (active && !useGameStore.getState().endReveal) {
+          setEndRevealError('Chưa tải được bảng vai trò. Hãy thử lại.');
+        }
+      })
+      .catch(() => {
+        if (active) setEndRevealError('Chưa tải được bảng vai trò. Hãy thử lại.');
+      });
+    return () => { active = false; };
+  }, [phase, gamePhaseVersion, endReveal, fetchEndReveal]);
 
-  useEffect(() => {
-    if (chatTab === 'logs') {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [chatTab, gameLog.length]);
+  const connection = connectionView(connectionStatus);
+  const sprintIndex = game?.sprintIndex ?? 0;
+  const completedSprints = game?.history.length ?? sprintHistory.length;
+  const totalSprints = sprintIndex >= 4 || (game?.history.some((record) => record.sprintNumber === 5) ?? false) ? 5 : 4;
+  const sprintNumber = phase === 'sprintResult' || phase === 'assassination' || phase === 'ended'
+    ? Math.max(1, completedSprints)
+    : Math.min(totalSprints, sprintIndex + 1);
+  const requiredTeamSize = game?.requiredTeamSize ?? store.requiredTeamSize;
+  const teamIds = game?.teamIds ?? store.proposedTeam;
+  const teamVoteSubmittedIds = game?.teamVoteSubmittedPlayerIds ?? store.teamVoteSubmittedPlayerIds;
+  const currentPlayer = players.find((player) => player.id === playerId);
+  const leader = game?.leaderId ? players.find((player) => player.id === game.leaderId) : null;
+  const isCurrentPo = Boolean(game?.leaderId && playerId === game.leaderId);
+  const canSelectTeam = phase === 'teamSelection' && allowedActions.includes('setTeam');
+  const canFinalizeTeam = canSelectTeam && allowedActions.includes('finalizeTeam');
+  const teamVoteSubmitted = Boolean(playerId && teamVoteSubmittedIds.includes(playerId));
+  const canVoteTeam = phase === 'teamVoting' && allowedActions.includes('castTeamVote') && !teamVoteSubmitted;
+  const isOnTeam = Boolean(playerId && teamIds.includes(playerId));
+  const canVoteExecution = phase === 'execution' && allowedActions.includes('castExecutionVote') && voteAck?.phase !== 'execution';
+  const canGuess = phase === 'assassination' && allowedActions.includes('guessScrumMaster');
+  const badChatEnabled = Boolean(privateState?.canUseBadFactionChat ?? canUseBadFactionChat);
+  const activeChatTab = chatTab === 'bad' && !badChatEnabled ? 'public' : chatTab;
+  const selectedPlayers = teamDraft.phaseVersion === (game?.phaseVersion ?? -1) ? teamDraft.ids : [];
+  const endRevealLoading = phase === 'ended' && !endReveal && !endRevealError;
 
-  // Auto-open end-of-game modal whenever the room enters the `ended` phase.
-  useEffect(() => {
-    if (phase === 'ended') {
-      setEndModalOpen(true);
-    } else {
-      setEndModalOpen(false);
-    }
-  }, [phase]);
+  const phaseMeta = phase && phase !== 'lobby' ? PHASE_TEXT[phase] : null;
+  const instruction = phase === 'teamSelection' && sprintIndex >= 4
+    ? 'Tỉ số đang hòa 2–2. Đây là Sprint 5 phân định kết quả; số người trong đội lặp lại Sprint 4.'
+    : phaseMeta?.instruction ?? '';
+  const timerTotalMs = phaseDeadlineAt != null && phaseStartedAt != null
+    ? Math.max(1, phaseDeadlineAt - phaseStartedAt)
+    : null;
+  const timerLabel = phase === 'planningDiscussion'
+    ? 'Thảo luận'
+    : phase === 'teamSelection'
+      ? 'PO chọn đội'
+      : phase === 'teamVoting'
+        ? 'Bỏ phiếu'
+        : phase === 'teamVoteReveal'
+          ? 'Mở phiếu'
+          : phase === 'execution'
+            ? 'Bỏ phiếu kín'
+            : phase === 'executionReveal'
+              ? 'Lật phiếu'
+              : phase === 'assassination'
+                ? 'Lật kèo'
+                : phase === 'firstNight'
+                  ? 'Giờ tan ca'
+                  : phase === 'roleReveal'
+                    ? 'Ghi nhớ vai trò'
+                    : 'Còn lại';
 
-  const isPO = currentPO?.id === playerId;
-  const isOnTeam = proposedTeam.includes(playerId || '');
-  const isSaboteur = saboteurIds.length > 0 || myRole === 'Người trễ task';
-
-  const getPlayerName = (id: string) => players.find((p) => p.id === id)?.name || 'Unknown';
-
-  const togglePlayer = (pid: string) => {
-    setSelectedPlayers((prev) =>
-      prev.includes(pid) ? prev.filter((id) => id !== pid) : [...prev, pid]
-    );
+  const toggleTeamPlayer = (targetId: string) => {
+    if (!canSelectTeam) return;
+    setTeamDraft((draft) => {
+      const selected = draft.phaseVersion === (game?.phaseVersion ?? -1) ? draft.ids : [];
+      if (selected.includes(targetId)) return { phaseVersion: game?.phaseVersion ?? -1, ids: selected.filter((id) => id !== targetId) };
+      if (selected.length >= requiredTeamSize) return { phaseVersion: game?.phaseVersion ?? -1, ids: [...selected.slice(1), targetId] };
+      return { phaseVersion: game?.phaseVersion ?? -1, ids: [...selected, targetId] };
+    });
   };
 
-  const handlePropose = () => {
-    proposeTeam(selectedPlayers);
-    setSelectedPlayers([]);
+  const finalizeTeam = async () => {
+    if (!canFinalizeTeam || selectedPlayers.length !== requiredTeamSize) return;
+    await store.proposeTeam(selectedPlayers);
+    setTeamDraft({ phaseVersion: game?.phaseVersion ?? -1, ids: [] });
   };
 
-  const handleSendChat = async () => {
+  const openChat = (tab: ChatTab) => {
+    setChatTab(tab);
+    setChatOpen(true);
+  };
+
+  const handleSendChat = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const text = chatDraft.trim();
-    if (!text || isSilenced) return;
-    await sendMessage(text);
+    if (!text || isSilenced || isSpectator) return;
+    if (activeChatTab === 'bad') await store.sendBadMessage(text);
+    else await store.sendMessage(text);
     setChatDraft('');
   };
 
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
-    const shareData = {
-      title: 'Agile Werewolf',
-      text: `Vào phòng Scrum của tôi! Mã phòng: ${roomId}`,
-      url: shareUrl,
-    };
+    const url = `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
     try {
-      if (typeof navigator !== 'undefined' && 'share' in navigator) {
-        await navigator.share(shareData);
-        return;
+      if (navigator.share) {
+        await navigator.share({ title: 'Vào phòng Agile', text: `Mã phòng ${roomId}`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareToast('Đã sao chép lời mời.');
       }
     } catch {
-      // user cancelled — fall through to clipboard
-    }
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShareToast('Đã copy link mời vào phòng!');
-    } catch {
-      setShareToast(shareUrl);
-    }
-    setTimeout(() => setShareToast(null), 2500);
-  };
-
-  const openRename = () => {
-    setRenameDraft(playerName || '');
-    setRenameError(null);
-    setRenameOpen(true);
-  };
-
-  const handleRename = async () => {
-    const newName = renameDraft.trim();
-    if (!newName || !playerId) return;
-    setRenameBusy(true);
-    const error = await renamePlayer(newName);
-    setRenameBusy(false);
-    if (error) {
-      setRenameError(error);
-      return;
-    }
-    setRenameOpen(false);
-  };
-
-  // "Về lobby" — reset the same room. Modal closes when phase leaves 'ended'.
-  const handleResetRoom = async () => {
-    if (resetBusy) return;
-    setResetBusy(true);
-    try {
-      await resetRoom();
-      // resetRoom updates phase to 'lobby' via setRoomFromResponse; the
-      // effect above will then close the modal automatically.
-    } catch (err) {
-      console.error('[resetRoom]', err);
-    } finally {
-      setResetBusy(false);
+      setShareToast(url);
     }
   };
 
-  // "Tìm phòng khác" — confirm first, then leave and route home.
-  const handleRequestLeave = () => {
-    setLeaveConfirmOpen(true);
-  };
-
-  const handleConfirmLeave = () => {
-    leaveRoom();
-    setLeaveConfirmOpen(false);
-    setEndModalOpen(false);
+  const leave = () => {
+    store.leaveRoom();
     router.push('/');
   };
 
-  // ─── Sprint Progress Bar ───
-  const renderSprintBar = () => (
-    <div className="flex gap-2 w-full h-2">
-      {Array.from({ length: 4 }).map((_, i) => {
-        if (i < goodWins) return <div key={i} className="flex-1 sprint-good rounded-full" />;
-        if (i < goodWins + badWins) return <div key={i} className="flex-1 sprint-bad rounded-full" />;
-        if (i === goodWins + badWins && phase !== 'ended')
-          return <div key={i} className="flex-1 sprint-current rounded-full" />;
-        return <div key={i} className="flex-1 sprint-pending rounded-full" />;
-      })}
-    </div>
+  const retryEndReveal = async () => {
+    setEndRevealError('');
+    try {
+      await fetchEndReveal();
+      if (!useGameStore.getState().endReveal) setEndRevealError('Chưa tải được bảng vai trò. Hãy thử lại.');
+    } catch {
+      setEndRevealError('Chưa tải được bảng vai trò. Hãy thử lại.');
+    }
+  };
+
+  const openSkills = () => openChat('skills');
+  const messageSource: RoomMessage[] = activeChatTab === 'bad' ? badMessages : messages;
+  const eventSource = game?.publicEvents ?? gameLog;
+  const gamePlayers = game?.players ?? [];
+  const revealRoleById = new Map(endReveal?.revealedRoles.map(({ playerId: revealedPlayerId, role: revealedRole }) => [revealedPlayerId, revealedRole]) ?? []);
+  const recapPlayers = (endReveal?.players ?? []).map((player) => ({
+    id: player.id,
+    name: player.name,
+    role: revealRoleById.get(player.id) ?? null,
+  }));
+  const revealedBadPlayerIds = new Set(
+    knownRoles.filter(({ role: knownRole }) => factionForRole(knownRole) === 'bad').map(({ playerId: knownId }) => knownId),
   );
+  const guessCandidates = gamePlayers.filter((player) => player.id !== playerId && !revealedBadPlayerIds.has(player.id));
 
-  // ─── Lobby Phase ───
-  const renderLobby = () => (
-    <div className="space-y-6">
-      <div className="glass-panel rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-primary mb-1">
-            LOBBY : BACKLOG
-          </h1>
-          <p className="text-muted-foreground font-mono text-sm flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-            Đang chờ người chơi... ({players.length}/10)
-          </p>
-        </div>
-        <div className="text-xs text-muted-foreground font-mono">
-          Room: <span className="text-primary">{roomId}</span>
-        </div>
+  const renderChat = () => (
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Tin nhắn và hoạt động">
+      <div role="group" aria-label="Nội dung phòng" className="flex gap-1 overflow-x-auto border-b border-outline-variant p-2">
+        <ChatTabButton active={activeChatTab === 'public'} onClick={() => setChatTab('public')}>Chat</ChatTabButton>
+        {badChatEnabled && <ChatTabButton active={activeChatTab === 'bad'} onClick={() => setChatTab('bad')}>Chat riêng</ChatTabButton>}
+        <ChatTabButton active={activeChatTab === 'activity'} onClick={() => setChatTab('activity')}>Diễn biến</ChatTabButton>
+        <ChatTabButton active={activeChatTab === 'skills'} onClick={() => setChatTab('skills')}>Kỹ năng</ChatTabButton>
       </div>
 
-      <div>
-        <h2 className="text-base sm:text-lg font-semibold text-foreground mb-3 pb-2 border-b border-border inline-block">
-          Dev Team (Players)
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-          {players.map((p) => (
-            <div key={p.id} className="glass-panel rounded-lg p-3 sm:p-4 status-strip-villager relative">
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden border-2 border-secondary bg-surface-container shrink-0">
-                  <img
-                    src={getAvatarUrl(p.name)}
-                    alt={p.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="text-center">
-                  <p className="font-semibold text-sm text-foreground truncate w-20 sm:w-24">
-                    {p.name}
-                  </p>
-                  {p.id === currentPO?.id ? (
-                    <span className="font-mono text-[10px] text-primary tracking-wider">HOST</span>
-                  ) : (
-                    <span className="font-mono text-[10px] text-secondary tracking-wider">READY</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-          {Array.from({ length: Math.max(0, 10 - players.length) }).map((_, i) => (
-            <div
-              key={`empty-${i}`}
-              className="glass-panel rounded-lg p-3 sm:p-4 border-dashed border-outline flex flex-col items-center justify-center min-h-[110px] sm:min-h-[140px] opacity-50"
-            >
-              <span className="material-symbols-outlined text-3xl sm:text-4xl text-outline mb-2">
-                person_add
-              </span>
-              <span className="font-mono text-xs text-outline">Waiting...</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Role config — host only when >=5 players */}
-      {isPO && players.length >= 5 && (
-        <RoleConfigCounter
-          onStart={(selected) => {
-            if (selected.length === 0) {
-              // empty array signals server to use default 60/40 random pool
-              startGame();
-            } else {
-              startGame(selected);
-            }
-          }}
+      {game && allowedActions.includes('react') && !isSpectator && (
+        <ReactionBar
+          players={game.players}
+          proposalAvailable={game.teamIds.length > 0}
+          resultAvailable={game.history.length > 0}
+          onReact={(emoji, targetType, targetPlayerId) => void store.sendReaction(emoji, targetType, targetPlayerId)}
         />
       )}
-      {isPO && players.length < 5 && (
-        <p className="text-xs text-muted-foreground text-center italic">
-          Cần ít nhất 5 người chơi để bắt đầu.
-        </p>
-      )}
-    </div>
-  );
 
-  // ─── Planning Phase ───
-  const renderPlanning = () => {
-    const requiredSize = getSprintSize(players.length, currentSprint, techDebtActive);
-
-    return (
-      <div className="space-y-6">
-        {techDebtActive && (
-          <div className="glass-panel rounded-xl p-3 border border-error/40 bg-error/5">
-            <p className="text-xs text-error font-mono">
-              ⚠ Technical Debt: Sprint này phải có {requiredSize} người (cộng thêm +1).
-            </p>
-          </div>
-        )}
-        {deadlineSilenced && (
-          <div className="glass-panel rounded-xl p-3 border border-error/40 bg-error/5">
-            <p className="text-xs text-error font-mono">
-              ⚠ Áp lực tối đa: Tất cả thành viên bị cấm thảo luận trong Sprint này.
-            </p>
-          </div>
-        )}
-        {sepSilencedPlayerId && (
-          <div className="glass-panel rounded-xl p-3 border border-error/40 bg-error/5">
-            <p className="text-xs text-error font-mono">
-              🔇 {getPlayerName(sepSilencedPlayerId)} đã bị Sếp khó ưa khóa miệng trong Sprint này.
-            </p>
-          </div>
-        )}
-
-        {isPO ? (
-          <>
-            <div className="glass-panel p-4 sm:p-6 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-l-4 border-l-primary-container">
-              <div>
-                <h2 className="text-lg sm:text-xl font-bold text-foreground mb-1">
-                  Bạn là Product Owner
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  Chọn {requiredSize} người vào nhóm Sprint {currentSprint + 1}. Nhóm cần được biểu
-                  quyết duyệt.
-                </p>
-              </div>
-              <div className="flex flex-col items-end shrink-0">
-                <span className="font-mono text-xs text-muted-foreground">Đã chọn</span>
-                <span className="text-2xl font-bold text-secondary">
-                  {selectedPlayers.length} / {requiredSize}
-                </span>
-              </div>
+      {activeChatTab === 'skills' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-3"><SkillPanel /></div>
+      ) : activeChatTab === 'activity' ? (
+        <div ref={chatListRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" aria-live="polite">
+          {eventSource.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-outline-variant p-4 text-center text-xs text-muted-foreground">Sự kiện sẽ xuất hiện tại đây khi ván bắt đầu.</p>
+          ) : eventSource.map((event, index) => (
+            <div key={`${event.type}-${index}`} className="flex gap-2 rounded-xl border border-outline-variant bg-surface-container/40 p-3">
+              <span className="material-symbols-outlined text-base text-primary" aria-hidden="true">{event.type === 'sprintResolved' ? 'flag' : event.type === 'teamRejected' || event.type === 'teamAccepted' ? 'how_to_vote' : 'info'}</span>
+              <p className="text-xs leading-relaxed text-foreground">{eventText(event)}</p>
             </div>
-
-            <div>
-              <h3 className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3 ml-2">
-                Danh sách team
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {players
-                  .filter((p) => p.isAlive)
-                  .map((p) => {
-                    const isSelected = selectedPlayers.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => togglePlayer(p.id)}
-                        className={`glass-panel rounded-lg p-4 flex items-start gap-4 text-left transition-all duration-200 group ${
-                          p.id === playerId
-                            ? 'status-strip-po'
-                            : isSelected
-                            ? 'status-strip-nominated border-secondary/50'
-                            : 'status-strip-neutral'
-                        } ${isSelected ? '' : 'hover:bg-surface-container-high'}`}
-                      >
-                        <div className="w-12 h-12 rounded-full overflow-hidden border border-outline shrink-0 bg-surface-container">
-                          <img src={getAvatarUrl(p.name)} alt={p.name} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-semibold text-sm text-foreground">
-                              {p.name}
-                              {p.id === playerId ? ' (You)' : ''}
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {ttsFollowTargetId === p.id ? '👁 TTS theo sát' : 'Engineer'}
-                          </span>
-                        </div>
-                        <div
-                          className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                            isSelected
-                              ? 'bg-secondary text-secondary-foreground'
-                              : 'border border-outline group-hover:border-primary'
-                          }`}
-                        >
-                          {isSelected ? (
-                            <span
-                              className="material-symbols-outlined text-sm"
-                              style={{ fontVariationSettings: 'FILL 1' }}
-                            >
-                              check
-                            </span>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <Button
-                onClick={handlePropose}
-                disabled={selectedPlayers.length !== requiredSize}
-                className="bg-secondary text-secondary-foreground hover:bg-secondary/90 px-8 py-3 rounded-lg font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <span className="material-symbols-outlined mr-2">groups</span>
-                ĐỀ XUẤT NHÓM
-              </Button>
-            </div>
-            {myRole === 'Project Manager' && !pmOverrideUsed && (
-              <p className="text-xs text-muted-foreground italic text-center">
-                💡 Bạn là PM — có thể dùng nút FAB &ldquo;PM Override&rdquo; góc dưới phải để chiếm quyền chỉ định.
-              </p>
-            )}
-          </>
-        ) : (
-          <div className="glass-panel rounded-xl p-6 sm:p-8 text-center">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-surface-container-high mx-auto mb-4 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary">
-                hourglass_empty
-              </span>
-            </div>
-            <p className="text-base sm:text-lg font-semibold text-foreground mb-2">
-              Chờ {currentPO?.name} đề xuất nhóm...
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Planning Sprint {currentSprint + 1}
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ─── TeamVoting Phase ───
-  const renderTeamVoting = () => {
-    const meVoted = !!useGameStore.getState().players.find((p) => p.id === playerId);
-    void meVoted;
-    // Open ballots — split alive voters by their current vote (or pending if silenced/not yet voted).
-    const eligibleVoters = players.filter(
-      (p) => p.isAlive && !(deadlineSilenced || sepSilencedPlayerId === p.id)
-    );
-    const agreeVoters = eligibleVoters.filter((p) => votes[p.id] === 'agree');
-    const rejectVoters = eligibleVoters.filter((p) => votes[p.id] === 'reject');
-    const pendingVoters = eligibleVoters.filter((p) => !votes[p.id]);
-    const totalVoted = agreeVoters.length + rejectVoters.length;
-    return (
-      <div className="space-y-6">
-        <div className="glass-panel rounded-xl p-4 sm:p-6 text-center">
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">Biểu quyết duyệt nhóm</h2>
-          <p className="text-muted-foreground mb-4 text-sm sm:text-base">
-            {currentPO?.name} đề xuất nhóm cho Sprint {currentSprint + 1}:
-          </p>
-          <div className="flex flex-wrap gap-2 sm:gap-3 justify-center mb-4">
-            {proposedTeam.map((id) => (
-              <div
-                key={id}
-                className="glass-panel rounded-lg px-3 py-2 flex items-center gap-2 status-strip-nominated"
-              >
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-secondary bg-surface-container">
-                  <img
-                    src={getAvatarUrl(getPlayerName(id))}
-                    alt={getPlayerName(id)}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <span className="font-semibold text-xs sm:text-sm">{getPlayerName(id)}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Open ballot counters */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mb-4 text-xs font-mono">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/15 text-secondary">
-              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: 'FILL 1' }}>thumb_up</span>
-              ĐỒNG Ý {agreeVoters.length}
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error/15 text-error">
-              <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: 'FILL 1' }}>thumb_down</span>
-              TỪ CHỐI {rejectVoters.length}
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-muted-foreground">
-              <span className="material-symbols-outlined text-base">hourglass_empty</span>
-              Chờ {pendingVoters.length}
-            </span>
-            <span className="text-muted-foreground">· {totalVoted}/{eligibleVoters.length} đã bỏ phiếu</span>
-          </div>
-
-          {isSilenced ? (
-            <p className="text-sm text-error italic mb-3">
-              Bạn bị cấm biểu quyết trong Sprint này.
-            </p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground mb-3">
-                Bỏ phiếu của bạn: (timeout 30s → auto Đồng ý)
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Button
-                  onClick={() => voteTeam('agree')}
-                  disabled={voteAck?.phase === 'teamVoting'}
-                  className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined mr-2">thumb_up</span>
-                  ĐỒNG Ý
-                </Button>
-                <Button
-                  onClick={() => voteTeam('reject')}
-                  disabled={voteAck?.phase === 'teamVoting'}
-                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined mr-2">thumb_down</span>
-                  TỪ CHỐI
-                </Button>
-              </div>
-            </>
-          )}
+          ))}
         </div>
-
-        {/* Open ballot — per-player vote indicators */}
-        <div className="glass-panel rounded-xl p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground">
-              Phiếu mở (đang cập nhật)
-            </h3>
-            <span className="text-[10px] font-mono text-muted-foreground">
-              {totalVoted}/{eligibleVoters.length}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-            {eligibleVoters.map((p) => {
-              const vote = votes[p.id];
-              const isAgree = vote === 'agree';
-              const isReject = vote === 'reject';
-              const accent =
-                isAgree
-                  ? 'border-secondary/60 bg-secondary/10'
-                  : isReject
-                  ? 'border-error/60 bg-error/10'
-                  : 'border-outline bg-surface-container/40';
-              const icon = isAgree
-                ? 'thumb_up'
-                : isReject
-                ? 'thumb_down'
-                : 'hourglass_empty';
-              const label = isAgree
-                ? 'ĐỒNG Ý'
-                : isReject
-                ? 'TỪ CHỐI'
-                : 'Đang chờ';
-              const iconColor = isAgree
-                ? 'text-secondary'
-                : isReject
-                ? 'text-error'
-                : 'text-muted-foreground';
-              return (
-                <div
-                  key={p.id}
-                  className={`rounded-lg p-2 border ${accent} flex items-center gap-2 transition-colors`}
-                >
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-outline bg-surface-container shrink-0 relative">
-                    <img
-                      src={getAvatarUrl(p.name)}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-surface-container flex items-center justify-center ${
-                        isAgree ? 'bg-secondary' : isReject ? 'bg-error' : 'bg-surface-container-high'
-                      }`}
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[10px] ${isAgree || isReject ? 'on-color' : iconColor}`}
-                        style={{ fontVariationSettings: 'FILL 1' }}
-                      >
-                        {icon}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate">
-                      {p.name}
-                      {p.id === playerId && ' (Bạn)'}
-                    </p>
-                    <p className={`text-[10px] font-mono ${iconColor}`}>{label}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── Execution Phase ───
-  const renderExecution = () => (
-    <div className="space-y-6">
-      <div className="glass-panel rounded-xl p-4 sm:p-6">
-        <div className="text-center mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">Thực thi Sprint</h2>
-          <p className="text-muted-foreground text-sm sm:text-base">
-            Nhóm bỏ phiếu kín về kết quả Sprint
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center mb-6">
-          {proposedTeam.map((id) => {
-            const isMe = id === playerId;
-            return (
-              <div
-                key={id}
-                className={`glass-panel rounded-lg px-3 py-2 flex items-center gap-2 ${
-                  isMe ? 'status-strip-nominated border-secondary/50' : 'status-strip-villager'
-                }`}
-              >
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-outline bg-surface-container">
-                  <img
-                    src={getAvatarUrl(getPlayerName(id))}
-                    alt={getPlayerName(id)}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <span className="font-semibold text-xs sm:text-sm">{getPlayerName(id)}</span>
-                {isMe && <span className="text-[10px] text-secondary font-mono ml-1">(You)</span>}
-              </div>
-            );
-          })}
-        </div>
-
-        {isOnTeam ? (
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground mb-4">
-              Bỏ phiếu của bạn: (timeout 30s → auto Success)
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button
-                onClick={() => voteExecution('success')}
-                disabled={voteAck?.phase === 'execution'}
-                className="px-8 py-4 rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide shadow-[0_0_15px_var(--row-glow-secondary)] disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined mr-2">check_circle</span>
-                HOÀN THÀNH
-              </Button>
-              {!isGood && (
-                <Button
-                  onClick={() => voteExecution('fail')}
-                  disabled={voteAck?.phase === 'execution'}
-                  className="px-8 py-4 rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
-                >
-                  <span className="material-symbols-outlined mr-2">local_fire_department</span>
-                  CHÁY DEADLINE
-                </Button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-4">
-            <span className="material-symbols-outlined text-3xl text-muted-foreground mb-2 block">
-              hourglass_empty
-            </span>
-            <p className="text-muted-foreground">Chờ nhóm bỏ phiếu...</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  // ─── SprintResult Phase ───
-  const renderSprintResult = () => {
-    // currentSprint was incremented already; sprint just completed is currentSprint - 1.
-    const justFinished = currentSprint - 1;
-    const sprintLabel = `Sprint ${Math.max(1, justFinished + 1)}`;
-    const lastEntry = sprintHistory[sprintHistory.length - 1];
-    const outcome = lastEntry?.outcome ?? null;
-
-    return (
-      <div className="space-y-6">
-        <div className="glass-panel rounded-xl p-6 sm:p-8 text-center">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-surface-container mx-auto mb-4 flex items-center justify-center">
-            <span
-              className={`material-symbols-outlined text-3xl sm:text-4xl ${
-                outcome === 'success'
-                  ? 'text-secondary'
-                  : outcome === 'fail'
-                  ? 'text-error'
-                  : 'text-primary'
-              }`}
-              style={{ fontVariationSettings: 'FILL 1' }}
-            >
-              {outcome === 'success'
-                ? 'check_circle'
-                : outcome === 'fail'
-                ? 'local_fire_department'
-                : 'fact_check'}
-            </span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
-            {sprintLabel}{' '}
-            {outcome === 'success'
-              ? '— THÀNH CÔNG'
-              : outcome === 'fail'
-              ? '— CHÁY DEADLINE'
-              : 'đã hoàn tất'}
-          </h2>
-          <p className="text-muted-foreground font-mono text-sm mb-2">
-            Tỉ số: <span className="text-secondary">Tốt {goodWins}</span> /{' '}
-            <span className="text-error">Xấu {badWins}</span>
-          </p>
-          {lastEntry && (
-            <div className="mt-4 flex flex-col items-center gap-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-                Team Sprint này ({lastEntry.proposedTeam.length})
-              </span>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {lastEntry.proposedTeam.map((id) => (
-                  <div
-                    key={id}
-                    className="flex items-center gap-1 bg-surface-container rounded-full pl-1 pr-2 py-0.5"
-                  >
-                    <div className="w-5 h-5 rounded-full overflow-hidden border border-outline">
-                      <img
-                        src={getAvatarUrl(getPlayerName(id))}
-                        alt={getPlayerName(id)}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <span className="text-[10px] font-mono">{getPlayerName(id)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {myRole === 'Quality Controller' && (
-            <p className="text-xs text-muted-foreground italic mt-3">
-              💡 Bạn là QC — có thể dùng nút FAB &ldquo;QC Redo&rdquo; để yêu cầu làm lại Sprint này.
-            </p>
-          )}
-          <Button onClick={advanceToPlanning} className="mt-4 px-6 py-3">
-            <span className="material-symbols-outlined mr-2">arrow_forward</span>
-            Tiếp tục (bàn luận 90s)
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── Between-Sprint Discussion Phase (90s) ───
-  const renderBetweenSprintDiscussion = () => {
-    const secs = Math.ceil(phaseRemainingMs / 1000);
-    const mm = Math.floor(secs / 60);
-    const ss = secs % 60;
-    const threshold = Math.ceil(players.length / 2);
-    const votes = discussionAdvanceVotes ?? [];
-    const meVoted = playerId ? votes.includes(playerId) : false;
-    return (
-      <div className="space-y-6">
-        <div className="glass-panel rounded-xl p-5 sm:p-6 text-center">
-          <span
-            className="material-symbols-outlined text-3xl text-primary mb-2 block"
-            style={{ fontVariationSettings: 'FILL 1' }}
-          >
-            forum
-          </span>
-          <h2 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
-            Bàn luận giữa Sprint
-          </h2>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            90 giây thảo luận trước khi vào giờ tan ca. Mở chat ở góc phải để trò chuyện.
-          </p>
-          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high">
-            <span className="material-symbols-outlined text-base text-muted-foreground">
-              timer
-            </span>
-            <span className="font-mono font-bold text-sm">
-              {mm}:{ss.toString().padStart(2, '0')}
-            </span>
-            <span className="text-[10px] font-mono text-muted-foreground">còn lại</span>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-sm font-mono uppercase tracking-widest text-muted-foreground mb-3">
-            Dev Team ({players.length})
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {players.map((p) => {
-              const hasVoted = votes.includes(p.id);
-              return (
-                <div
-                  key={p.id}
-                  className={`glass-panel rounded-xl p-3 flex flex-col items-center gap-2 text-center border ${
-                    !p.isAlive ? 'border-outline opacity-50' : hasVoted ? 'border-primary' : 'border-outline'
-                  }`}
-                >
-                  <div className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-surface bg-surface-container">
-                    <img
-                      src={getAvatarUrl(p.name)}
-                      alt={p.name}
-                      className="w-full h-full object-cover"
-                    />
-                    {hasVoted && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-primary/50">
-                        <span className="material-symbols-outlined text-white text-lg">check</span>
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold truncate w-full">
-                      {p.name}
-                      {p.id === playerId && ' (Bạn)'}
-                    </p>
-                    <p className="text-[10px] font-mono text-muted-foreground">
-                      {p.isAlive ? 'Đang chơi' : 'Đã chết'}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="text-center space-y-2">
-          <p className="text-xs text-muted-foreground font-mono">
-            {votes.length}/{threshold} — Sẵn sàng vào giờ tan ca
-          </p>
-          <Button
-            onClick={advanceFromDiscussion}
-            className="px-6 py-3"
-            disabled={meVoted}
-          >
-            <span className="material-symbols-outlined mr-2">wb_twilight</span>
-            {meVoted ? 'Đã sẵn sàng' : 'Sẵn sàng vào giờ tan ca'}
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── Discussion (assassination) Phase ───
-  const renderDiscussion = () => {
-    const secs = Math.ceil(phaseRemainingMs / 1000);
-    const mm = Math.floor(secs / 60);
-    const ss = secs % 60;
-    return (
-      <div className="space-y-6">
-        <div className="glass-panel rounded-xl p-6 sm:p-8 text-center border-error/40 glow-red">
-          <span
-            className="material-symbols-outlined text-4xl sm:text-5xl text-error mb-3 block"
-            style={{ fontVariationSettings: 'FILL 1' }}
-          >
-            groups
-          </span>
-          <h2 className="text-2xl sm:text-3xl font-bold text-error mb-2">Thảo luận lật kèo</h2>
-          <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto">
-            Scrum Team đã đạt 3 Sprint thành công. Phe Phá Dự Án có 60 giây thảo luận,
-            sau đó một Người trễ task sẽ chỉ điểm Scrum Master để lật kèo.
-          </p>
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-high">
-            <span className="material-symbols-outlined text-base text-muted-foreground">
-              timer
-            </span>
-            <span className="font-mono font-bold text-sm">
-              {mm}:{ss.toString().padStart(2, '0')}
-            </span>
-          </div>
-        </div>
-
-        {isSaboteur && (
-          <div className="glass-panel rounded-xl p-4 sm:p-6 text-center">
-            <h3 className="text-base sm:text-lg font-bold text-error mb-2 uppercase tracking-wide">
-              Vòng lật kèo: Chỉ điểm Scrum Master
-            </h3>
-            <p className="text-xs sm:text-sm text-muted-foreground mb-6">
-              Đoán đúng Scrum Master → phe xấu lật kèo thắng. Đoán sai → Scrum Team chính thức thắng.
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {players
-                .filter((p) => p.isAlive && p.id !== playerId)
-                .map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => saboteurGuess(p.id)}
-                    className="glass-panel rounded-lg p-3 hover:bg-surface-container-high transition-colors flex flex-col items-center gap-2"
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden border border-error/50 bg-surface-container">
-                      <img
-                        src={getAvatarUrl(p.name)}
-                        alt={p.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <span className="text-xs font-semibold">{p.name}</span>
-                  </button>
-                ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ─── Ended Phase ───
-  const renderEnded = () => (
-    <div className="space-y-6">
-      <div
-        className={`rounded-xl p-6 sm:p-8 text-center ${
-          badWins >= 2 ? 'glow-red' : 'glow-green'
-        } glass-panel`}
-      >
-        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-4 flex items-center justify-center">
-          {badWins >= 2 ? (
-            <span
-              className="material-symbols-outlined text-4xl sm:text-5xl text-error"
-              style={{ fontVariationSettings: 'FILL 1' }}
-            >
-              dangerous
-            </span>
-          ) : (
-            <span
-              className="material-symbols-outlined text-4xl sm:text-5xl text-secondary"
-              style={{ fontVariationSettings: 'FILL 1' }}
-            >
-              emoji_events
-            </span>
-          )}
-        </div>
-        <h1
-          className={`text-3xl sm:text-4xl font-bold mb-3 tracking-tight ${
-            badWins >= 2 ? 'text-error' : 'text-secondary'
-          }`}
-        >
-          {badWins >= 2 ? 'PHE PHÁ DỰ ÁN THẮNG!' : 'SCRUM TEAM THẮNG!'}
-        </h1>
-        <p className="text-muted-foreground font-mono text-sm">
-          {badWins >= 2 ? 'Dự án thất bại.' : 'Dự án được release thành công.'}
-        </p>
-      </div>
-
-      {/* Saboteur guess UI — only when good has 3 wins (final flip chance) */}
-      {goodWins >= 3 && badWins < 2 && isSaboteur && (
-        <div className="glass-panel rounded-xl p-4 sm:p-6 text-center glow-red">
-          <h3 className="text-base sm:text-lg font-bold text-error mb-2 uppercase tracking-wide">
-            Vòng lật kèo: Chỉ điểm Scrum Master
-          </h3>
-          <p className="text-xs sm:text-sm text-muted-foreground mb-6">
-            Đoán đúng Scrum Master → phe xấu lật kèo thắng. Đoán sai → Scrum Team chính thức thắng.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {players
-              .filter((p) => p.isAlive && p.id !== playerId)
-              .map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => saboteurGuess(p.id)}
-                  className="glass-panel rounded-lg p-3 hover:bg-surface-container-high transition-colors flex flex-col items-center gap-2"
-                >
-                  <div className="w-12 h-12 rounded-full overflow-hidden border border-error/50 bg-surface-container">
-                    <img src={getAvatarUrl(p.name)} alt={p.name} className="w-full h-full object-cover" />
-                  </div>
-                  <span className="text-xs font-semibold">{p.name}</span>
-                </button>
-              ))}
-          </div>
-        </div>
-      )}
-
-      <div className="glass-panel rounded-xl p-4 sm:p-6">
-        <h3 className="text-sm font-semibold tracking-widest uppercase text-muted-foreground mb-4">
-          Role Reveal
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {players.map((p) => {
-            const role = (p.role as PlayerRole) || 'Developer';
-            const good = ![
-              'Người trễ task',
-              'Client',
-              'Ông sếp khó ưa',
-              'Kẻ fake CV',
-              'QC cẩu thả',
-              'Deadline',
-              'Technical Debt',
-            ].includes(role);
-            return (
-              <div
-                key={p.id}
-                className={`rounded-lg p-3 text-center bg-surface-container-high ${
-                  good ? 'status-strip-villager' : 'status-strip-werewolf'
-                }`}
-              >
-                <div className="w-12 h-12 rounded-full mx-auto mb-2 overflow-hidden border border-outline bg-surface-container">
-                  <img src={getAvatarUrl(p.name)} alt={p.name} className="w-full h-full object-cover" />
-                </div>
-                <p className="text-xs font-semibold truncate">{p.name}</p>
-                <p className={`text-[10px] font-mono mt-1 ${good ? 'text-secondary' : 'text-error'}`}>
-                  {role}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-
-  // ─── Sidebar nav content (used in left desktop sidebar + mobile menu drawer) ───
-  const renderSidebarBody = () => (
-    <>
-      <div className="p-4 sm:p-6 border-b border-outline-variant">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary bg-surface-container shrink-0">
-            <img
-              src={getAvatarUrl(playerName || 'Player')}
-              alt={playerName || ''}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-foreground text-sm truncate">{playerName}</div>
-            {myRole && (
-              <span className={`text-xs font-mono ${isGood ? 'text-secondary' : 'text-error'}`}>
-                {myRole}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={openRename}
-            className="p-1.5 rounded-lg hover:bg-surface-container-high text-muted-foreground shrink-0"
-            aria-label="Đổi tên"
-            title="Đổi tên hiển thị"
-          >
-            <span className="material-symbols-outlined text-lg">edit</span>
-          </button>
-        </div>
-        {phase && phase !== 'ended' && (
-          <div className="mt-3">
-            <Badge variant="outline" className="text-xs border-primary/40 text-primary font-mono">
-              {PHASE_LABELS[phase] || phase}
-            </Badge>
-            {isSilenced && (
-              <Badge variant="outline" className="text-xs border-error/40 text-error font-mono ml-2">
-                🔇 Silenced
-              </Badge>
-            )}
-          </div>
-        )}
-        {myRole && ROLE_DESCRIPTIONS[myRole as PlayerRole] && (
-          <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
-            {ROLE_DESCRIPTIONS[myRole as PlayerRole]}
-          </p>
-        )}
-      </div>
-
-      <div className="p-4 sm:p-6 border-b border-outline-variant space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
-            Good Wins
-          </span>
-          <span className="font-bold text-secondary">{goodWins}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
-            Bad Wins
-          </span>
-          <span className="font-bold text-error">{badWins}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider">
-            Delays
-          </span>
-          <span className="font-bold text-muted-foreground">{consecutiveDelays}</span>
-        </div>
-      </div>
-
-      <div className="p-4 sm:p-6 border-b border-outline-variant">
-        <span className="text-xs text-muted-foreground font-mono uppercase tracking-wider mb-2 block">
-          Sprint Progress
-        </span>
-        {renderSprintBar()}
-        <div className="flex justify-between mt-2">
-          <span className="text-xs text-secondary font-mono">Good {goodWins}/3</span>
-          <span className="text-xs text-error font-mono">Bad {badWins}/2</span>
-        </div>
-      </div>
-
-      {/* Sprint History (collapsible past sprints) */}
-      <SprintHistory />
-    </>
-  );
-
-  // ─── Chat body (used in right desktop sidebar + mobile chat drawer) ───
-  const renderChatBody = () => (
-    <>
-      <div className="flex border-b border-outline-variant shrink-0">
-        <button
-          onClick={() => setChatTab('chat')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 text-xs font-mono uppercase tracking-wider transition-colors ${
-            chatTab === 'chat'
-              ? 'text-secondary border-b-2 border-secondary bg-secondary/10'
-              : 'text-muted-foreground hover:bg-surface-container-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-lg">forum</span>
-          Chat
-        </button>
-        <button
-          onClick={() => setChatTab('logs')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 text-xs font-mono uppercase tracking-wider transition-colors ${
-            chatTab === 'logs'
-              ? 'text-secondary border-b-2 border-secondary bg-secondary/10'
-              : 'text-muted-foreground hover:bg-surface-container-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-lg">history</span>
-          Logs
-        </button>
-        <button
-          onClick={() => setChatTab('skills')}
-          className={`flex-1 py-3 flex flex-col items-center gap-1 text-xs font-mono uppercase tracking-wider transition-colors ${
-            chatTab === 'skills'
-              ? 'text-secondary border-b-2 border-secondary bg-secondary/10'
-              : 'text-muted-foreground hover:bg-surface-container-high'
-          }`}
-        >
-          <span className="material-symbols-outlined text-lg">auto_awesome</span>
-          Skill
-        </button>
-      </div>
-
-      {chatTab === 'chat' ? (
-        <>
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-            {messages.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center italic mt-8">No messages yet</p>
-            )}
-            {messages.map((m) => {
-              const isSelf = m.player_name === playerName;
-              return (
-                <div
-                  key={m.id}
-                  className={`flex flex-col gap-1 ${isSelf ? 'items-end' : 'items-start'}`}
-                >
-                  <span
-                    className={`text-[11px] font-mono ${
-                      isSelf ? 'text-primary' : 'text-muted-foreground'
-                    }`}
-                  >
-                    {m.player_name} ·{' '}
-                    {new Date(m.created_at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                  <div
-                    className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${
-                      isSelf
-                        ? 'bg-primary-container text-primary-foreground rounded-br-none'
-                        : 'bg-surface-container-high text-foreground rounded-bl-none'
-                    }`}
-                  >
-                    {m.text}
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={chatEndRef} />
-          </div>
-
-          <div className="p-3 sm:p-4 border-t border-outline-variant shrink-0">
-            <div className="relative">
-              <input
-                value={chatDraft}
-                onChange={(e) => setChatDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendChat();
-                  }
-                }}
-                placeholder={isSilenced ? 'Bạn bị cấm thảo luận...' : 'Gửi tin nhắn...'}
-                maxLength={500}
-                disabled={isSilenced}
-                className="w-full bg-surface-container border border-outline rounded-lg py-2 pl-3 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-40 disabled:cursor-not-allowed"
-              />
-              <button
-                onClick={handleSendChat}
-                disabled={isSilenced}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:text-primary/80 disabled:opacity-40"
-                aria-label="Send"
-              >
-                <span className="material-symbols-outlined text-lg">send</span>
-              </button>
-            </div>
-          </div>
-        </>
-      ) : chatTab === 'skills' ? (
-        <SkillPanel />
       ) : (
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 flex flex-col gap-2">
-          {gameLog.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center font-mono mt-4">
-              Chưa có log — sự kiện sẽ xuất hiện khi game bắt đầu.
-            </div>
-          ) : (
-            gameLog.map((entry) => {
-              const tone =
-                entry.tone === 'good'
-                  ? 'border-secondary/40 bg-secondary/5'
-                  : entry.tone === 'bad'
-                  ? 'border-error/40 bg-error/5'
-                  : 'border-outline bg-surface-container/40';
-              const icon =
-                entry.category === 'sprint'
-                  ? 'flag'
-                  : entry.category === 'vote'
-                  ? 'how_to_vote'
-                  : entry.category === 'skill'
-                  ? 'auto_awesome'
-                  : entry.category === 'system'
-                  ? 'settings'
-                  : 'schedule';
-              const iconColor =
-                entry.tone === 'good'
-                  ? 'text-secondary'
-                  : entry.tone === 'bad'
-                  ? 'text-error'
-                  : 'text-primary';
-              return (
-                <div
-                  key={entry.id}
-                  className={`rounded-lg border p-2 flex gap-2 ${tone}`}
-                >
-                  <span
-                    className={`material-symbols-outlined text-base shrink-0 mt-0.5 ${iconColor}`}
-                    style={{ fontVariationSettings: 'FILL 1' }}
-                  >
-                    {icon}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs leading-relaxed text-foreground break-words">
-                      {entry.text}
-                    </p>
-                    <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                      {new Date(entry.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })
+        <>
+          {inPersonMode && activeChatTab === 'public' && (
+            <p className="border-b border-outline-variant px-3 py-2 text-xs text-muted-foreground">Chế độ chơi trực tiếp: hãy trò chuyện cùng nhau; chat vẫn sẵn sàng khi cần.</p>
           )}
-          <div ref={logsEndRef} />
-        </div>
+          <div ref={chatListRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" aria-live="polite" aria-label={activeChatTab === 'bad' ? 'Tin nhắn riêng phe Phá Dự Án' : 'Tin nhắn công khai'}>
+            {messageSource.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-outline-variant px-4 py-8 text-center">
+                <span className="material-symbols-outlined text-2xl text-muted-foreground" aria-hidden="true">forum</span>
+                <p className="mt-2 text-sm text-foreground">Chưa có tin nhắn</p>
+                <p className="mt-1 text-xs text-muted-foreground">Bắt đầu cuộc trò chuyện tại đây.</p>
+              </div>
+            ) : messageSource.map((message) => {
+              const sender = players.find((player) => player.id === message.senderPlayerId)?.name ?? 'Người chơi';
+              const isOwn = message.senderPlayerId === playerId;
+              return (
+                <article key={message.sequence} className={`max-w-[92%] rounded-2xl border px-3 py-2 ${isOwn ? 'ml-auto border-primary/30 bg-primary/10' : 'border-outline-variant bg-surface-container/50'}`}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="truncate text-xs font-semibold text-foreground">{isOwn ? 'Bạn' : sender}</p>
+                    <time className="shrink-0 text-[10px] text-muted-foreground" dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">{message.text}</p>
+                </article>
+              );
+            })}
+          </div>
+          {isSilenced && <p className="border-t border-error/20 bg-error/5 px-3 py-2 text-xs text-error">Chat đang bị khóa trong giai đoạn này.</p>}
+          <form onSubmit={handleSendChat} className="flex gap-2 border-t border-outline-variant p-3">
+            <input
+              type="text"
+              value={chatDraft}
+              onChange={(event) => setChatDraft(event.target.value)}
+              maxLength={500}
+              disabled={isSilenced || isSpectator}
+              aria-label={activeChatTab === 'bad' ? 'Nhắn riêng cho phe Phá Dự Án' : 'Nhắn cho cả phòng'}
+              placeholder={isSilenced ? 'Chat đang bị khóa' : 'Viết tin nhắn…'}
+              className="min-h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
+            />
+            <Button type="submit" className="min-h-11 shrink-0 px-3" disabled={!chatDraft.trim() || isSilenced || isSpectator} aria-label="Gửi tin nhắn">
+              <span className="material-symbols-outlined text-lg" aria-hidden="true">send</span>
+            </Button>
+          </form>
+        </>
       )}
-    </>
+    </section>
   );
 
-  const isVotingPhase = phase === 'teamVoting' || phase === 'execution';
+  const renderSidebar = () => (
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+      <div className="flex items-center gap-3 border-b border-outline-variant p-4">
+        <img src={getAvatarUrl(playerName || 'Player')} alt="" className="h-11 w-11 rounded-full border border-outline-variant object-cover" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">{playerName || currentPlayer?.name || 'Người chơi'}</p>
+          {role && <p className={`mt-0.5 truncate text-xs ${faction === 'bad' ? 'text-error' : 'text-secondary'}`}>{role}</p>}
+        </div>
+        <ConnectionStatus status={connection} />
+      </div>
+
+      <div className="space-y-3 p-3">
+        <RoleGuidance role={privateState?.ownRole ?? null} faction={privateState?.faction ?? null} knownRoles={privateState?.knownRoles ?? []} players={gamePlayers} />
+        {game && (
+          <div className="rounded-2xl border border-outline-variant bg-surface-container/40 p-4">
+            <h2 className="text-sm font-semibold text-foreground">Bảng Sprint</h2>
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Đội Scrum · cần 3 thắng</span><span className="font-mono font-semibold text-secondary">{game.goodWins}/3</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Phe Phá Dự Án · cần 3 thất bại</span><span className="font-mono font-semibold text-error">{game.badWins}/3</span>
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-outline-variant pt-3 text-xs text-muted-foreground">
+              <span>Nhóm bị từ chối</span><span className="font-mono">{game.rejectedTeams}/4</span>
+            </div>
+          </div>
+        )}
+        <SprintHistory />
+        <div className="rounded-2xl border border-outline-variant bg-surface-container/30 p-3">
+          <p className="text-xs font-medium text-foreground">Phòng {roomId}</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Mời đồng đội qua nút chia sẻ ở phía trên.</p>
+          <Button type="button" variant="outline" className="mt-3 min-h-11 w-full" onClick={() => void handleShare()}>
+            <span className="material-symbols-outlined mr-2 text-base" aria-hidden="true">ios_share</span>
+            Chia sẻ lời mời
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPhase = () => {
+    if (!publicState) {
+      return (
+        <div className="glass-panel rounded-2xl p-6 text-center sm:p-8" role="status">
+          <span className="material-symbols-outlined text-3xl text-primary" aria-hidden="true">sync</span>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">Đang kết nối phòng</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Đang khôi phục chỗ ngồi và đồng bộ trạng thái.</p>
+          {error && <p className="mt-3 text-sm text-error">{error}</p>}
+          <Link href="/" className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-outline px-4 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Về trang chủ</Link>
+        </div>
+      );
+    }
+
+    if (lobby) {
+      const lobbyPlayers = lobby.players.map((player) => ({ ...player, isHost: player.id === lobby.hostPlayerId }));
+      const activePlayerCount = lobby.players.filter((player) => !player.isSpectator).length;
+      return (
+        <div className="space-y-5">
+          <LobbyRoomPanel
+            roomId={roomId}
+            players={lobbyPlayers}
+            currentPlayerId={playerId || ''}
+            isHost={isHost || playerId === lobby.hostPlayerId}
+            isReady={playerReady}
+            isLocked={lobby.locked}
+            communicationMode={lobby.settings.communicationMode}
+            phase="lobby"
+            onReadyChange={store.setReady}
+            onLockChange={store.setRoomLocked}
+            onKick={store.kickPlayer}
+            onTransferHost={store.transferHost}
+            onCommunicationModeChange={(communicationMode) => store.setRoomSettings({ communicationMode })}
+          />
+          {activePlayerCount >= 5 && (isHost || playerId === lobby.hostPlayerId) ? (
+            <RoleConfigCounter
+              onStart={() => void store.startGame()}
+              rolePreview={lobby.rolePreview}
+              isHost={isHost || playerId === lobby.hostPlayerId}
+              isBusy={authStatus === 'authenticating'}
+              serverError={error}
+              onSelectPreset={(preset, roles) => store.setRolePreset(preset, roles)}
+              onRerollPreset={store.rerollRolePreset}
+            />
+          ) : activePlayerCount < 5 ? (
+            <p className="rounded-xl border border-outline-variant bg-surface-container/40 p-3 text-center text-sm text-muted-foreground">Cần ít nhất 5 người chơi để bắt đầu.</p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (!game || !phaseMeta) return null;
+
+    if (phase === 'planningDiscussion') {
+      return (
+        <section className="glass-panel rounded-2xl p-5 sm:p-7">
+          <div className="flex items-start gap-4">
+            <span className="material-symbols-outlined grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-2xl text-primary" aria-hidden="true">forum</span>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Thảo luận trước khi chọn đội</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Tất cả người chơi có 180 giây để trao đổi. Khi đồng hồ kết thúc, PO mới bước vào lượt chọn đội 45 giây.</p>
+              {game.chatPolicy.allMuted && <p className="mt-3 rounded-xl border border-error/30 bg-error/5 p-3 text-sm text-error">Phòng đang im lặng trong Planning.</p>}
+              {game.chatPolicy.mutedPlayerId && <p className="mt-3 rounded-xl border border-error/30 bg-error/5 p-3 text-sm text-error">Một người chơi đang bị khóa chat trong Planning.</p>}
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline">PO hiện tại: {leader?.name ?? 'Đang cập nhật'}</Badge>
+            <Badge variant="outline">Đội cần {requiredTeamSize} người</Badge>
+          </div>
+        </section>
+      );
+    }
+
+    if (phase === 'teamSelection') {
+      return (
+        <section className="space-y-4">
+          <div className="glass-panel rounded-2xl p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Chọn đúng {requiredTeamSize} người</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {isCurrentPo ? 'Chạm vào từng người để thêm hoặc bỏ khỏi đội.' : `Đang chờ PO ${leader?.name ?? ''} chọn đội.`}
+                </p>
+              </div>
+              <span className="rounded-full border border-outline-variant bg-surface-container/60 px-3 py-1.5 font-mono text-sm text-foreground">{selectedPlayers.length}/{requiredTeamSize}</span>
+            </div>
+          </div>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Chọn người vào đội Sprint">
+            {game.players.map((player) => {
+              const selected = selectedPlayers.includes(player.id);
+              return (
+                <li key={player.id}>
+                  <button
+                    type="button"
+                    aria-label={`Chọn ${player.name}`}
+                    aria-pressed={selected}
+                    disabled={!canSelectTeam}
+                    onClick={() => toggleTeamPlayer(player.id)}
+                    className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70 ${selected ? 'border-secondary/50 bg-secondary/10' : 'glass-panel hover:bg-surface-container-high'}`}
+                  >
+                    <img src={getAvatarUrl(player.name)} alt="" className="h-10 w-10 rounded-full border border-outline-variant object-cover" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-foreground">{player.name}{player.id === playerId ? ' · Bạn' : ''}</span>
+                      {player.id === game.leaderId && <span className="text-xs text-primary">Product Owner</span>}
+                    </span>
+                    <span className={`material-symbols-outlined ${selected ? 'text-secondary' : 'text-muted-foreground'}`} aria-hidden="true">{selected ? 'check_circle' : 'radio_button_unchecked'}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {!isCurrentPo && <p className="text-center text-xs text-muted-foreground">Bạn có thể trao đổi với cả phòng trong chat khi chat đang mở.</p>}
+        </section>
+      );
+    }
+
+    if (phase === 'teamVoting') {
+      const proposedNames = game.teamIds.map((id) => game.players.find((player) => player.id === id)).filter((player): player is PublicGameState['players'][number] => Boolean(player));
+      return (
+        <div className="space-y-4">
+          <section className="glass-panel rounded-2xl p-4 sm:p-5">
+            <h2 className="text-base font-semibold text-foreground">Đội được đề xuất cho Sprint {sprintNumber}</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {proposedNames.map((player) => <Badge key={player.id} variant="outline" className="px-3 py-1.5">{player.name}</Badge>)}
+            </div>
+          </section>
+          <TeamVoteBoard state={{
+            kind: 'voting',
+            players: game.players,
+            eligibleIds: game.players.map((player) => player.id),
+            submittedIds: game.teamVoteSubmittedPlayerIds,
+            pendingIds: game.teamVotePendingPlayerIds,
+            viewerId: playerId,
+          }} />
+        </div>
+      );
+    }
+
+    if (phase === 'teamVoteReveal') {
+      return <TeamVoteBoard state={{
+        kind: 'reveal',
+        players: game.players,
+        choices: game.teamVoteRevealVotes ?? {},
+        accepted: game.teamVoteOutcome?.accepted ?? false,
+        approveWeight: game.teamVoteOutcome?.approveWeight ?? 0,
+        rejectWeight: game.teamVoteOutcome?.rejectWeight ?? 0,
+      }} />;
+    }
+
+    if (phase === 'execution') {
+      const team = game.teamIds.map((id) => game.players.find((player) => player.id === id)).filter((player): player is PublicGameState['players'][number] => Boolean(player));
+      return (
+        <section className="glass-panel rounded-2xl p-4 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Đội thực thi Sprint</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Phiếu kín chỉ đến từ người có mặt trong đội.</p>
+            </div>
+            <span className="rounded-full border border-outline-variant bg-surface-container/60 px-3 py-1.5 font-mono text-xs text-muted-foreground">{game.executionSubmittedCount}/{team.length} đã bỏ phiếu</span>
+          </div>
+          <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Thành viên đội Sprint">
+            {team.map((player) => (
+              <li key={player.id} className={`flex min-h-14 items-center gap-3 rounded-xl border p-3 ${player.id === playerId ? 'border-primary/40 bg-primary/5' : 'border-outline-variant bg-surface-container/40'}`}>
+                <img src={getAvatarUrl(player.name)} alt="" className="h-9 w-9 rounded-full border border-outline-variant object-cover" />
+                <span className="text-sm font-medium text-foreground">{player.name}{player.id === playerId ? ' · Bạn' : ''}</span>
+              </li>
+            ))}
+          </ul>
+          {!isOnTeam && <p className="mt-4 rounded-xl border border-outline-variant p-3 text-sm text-muted-foreground">Bạn không nằm trong đội Sprint này. Hãy chờ kết quả chung.</p>}
+        </section>
+      );
+    }
+
+    if (phase === 'executionReveal') {
+      return game.executionReveal
+        ? <ExecutionReveal {...game.executionReveal} />
+        : <div className="glass-panel rounded-2xl p-6 text-center text-sm text-muted-foreground" role="status">Đang xáo và mở các lá phiếu ẩn danh…</div>;
+    }
+
+    if (phase === 'sprintResult') {
+      const lastSprint = game.history[game.history.length - 1];
+      return (
+        <section className="glass-panel rounded-2xl p-5 sm:p-7">
+          <p className="text-xs text-muted-foreground">Sprint {lastSprint?.sprintNumber ?? sprintNumber}</p>
+          <h2 className={`mt-1 text-2xl font-bold ${lastSprint?.outcome === 'success' ? 'text-secondary' : 'text-error'}`}>
+            {lastSprint?.outcome === 'success' ? 'Sprint thành công' : 'Sprint thất bại'}
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground">Tỉ số hiện tại: <span className="font-mono text-secondary">Scrum {game.goodWins}</span> – <span className="font-mono text-error">Phá Dự Án {game.badWins}</span></p>
+          {lastSprint && <p className="mt-2 text-sm text-muted-foreground">Đội có {lastSprint.teamIds.length} người · trọng số phiếu thất bại {lastSprint.failWeight}.</p>}
+          {allowedActions.some((action) => action === 'useQcRedo' || action === 'useDaCheck') && (
+            <Button type="button" className="mt-5 min-h-11" onClick={openSkills}>Mở kỹ năng của bạn</Button>
+          )}
+        </section>
+      );
+    }
+
+    if (phase === 'assassination') {
+      return (
+        <section className="space-y-4">
+          <div className="glass-panel rounded-2xl border-error/30 p-5 sm:p-7">
+            <p className="text-xs text-error">Cửa sổ cuối game</p>
+            <h2 className="mt-1 text-xl font-bold text-foreground">Ai là Scrum Master?</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Chỉ Người trễ task mới có thể gửi lượt chỉ điểm. Chọn một người chơi; vai trò của họ vẫn được giữ kín.</p>
+          </div>
+          {canGuess ? (
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" aria-label="Chọn nghi phạm Scrum Master">
+              {guessCandidates.map((player) => (
+                <li key={player.id}>
+                  <Button type="button" variant="outline" className="h-auto min-h-20 w-full flex-col gap-2 py-3" onClick={() => void store.saboteurGuess(player.id)}>
+                    <img src={getAvatarUrl(player.name)} alt="" className="h-9 w-9 rounded-full border border-outline-variant object-cover" />
+                    <span className="max-w-full truncate text-xs">{player.name}</span>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="rounded-xl border border-outline-variant p-4 text-sm text-muted-foreground">Đang chờ Người trễ task đưa ra quyết định.</p>}
+        </section>
+      );
+    }
+
+    if (phase === 'ended') {
+      return (
+        <div className="space-y-5">
+          {game.winner ? (
+            <EndGameRecap
+              winner={game.winner}
+              endReason={game.endReason}
+              goodWins={game.goodWins}
+              badWins={game.badWins}
+              players={recapPlayers}
+              sprintHistory={endReveal?.history ?? game.history}
+              isLoading={endRevealLoading}
+            />
+          ) : <div className="glass-panel rounded-2xl p-6 text-center text-sm text-muted-foreground">Đang tải kết quả ván chơi…</div>}
+          {endRevealError && <div className="rounded-xl border border-error/30 bg-error/5 p-3 text-sm text-error" role="alert">{endRevealError} <button type="button" className="ml-2 underline" onClick={() => void retryEndReveal()}>Thử lại</button></div>}
+          <LobbyRoomPanel
+            roomId={roomId}
+            players={players.map((player) => ({ id: player.id, name: player.name, ready: true, presence: 'online' as const, isHost: Boolean(player.id === playerId && isHost), isSpectator: false }))}
+            currentPlayerId={playerId || ''}
+            isHost={isHost}
+            phase="ended"
+            rematch={store.rematch ?? { proposedBy: null, readyPlayerIds: [] }}
+            onProposeRematch={store.proposeRematch}
+            onStartRematch={store.startRematch}
+          />
+        </div>
+      );
+    }
+
+    if (phase === 'roleReveal') {
+      return <section className="glass-panel rounded-2xl p-6 text-center"><h2 className="text-lg font-semibold text-foreground">Vai trò của bạn đã được phát bí mật</h2><p className="mt-2 text-sm text-muted-foreground">Đóng phiếu vai trò của bạn khi đã ghi nhớ.</p></section>;
+    }
+
+    if (phase === 'firstNight') {
+      const needsTarget = allowedActions.includes('setTtsTarget');
+      return (
+        <section className="glass-panel rounded-2xl p-5 sm:p-7">
+          <span className="material-symbols-outlined grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-2xl text-primary" aria-hidden="true">bedtime</span>
+          <h2 className="mt-4 text-lg font-semibold text-foreground">Giờ tan ca đầu tiên</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Thông tin riêng của bạn nằm trong thẻ vai trò. Không có mục tiêu bí mật nào được hiển thị công khai.</p>
+          {needsTarget && <Button type="button" className="mt-4 min-h-11" onClick={openSkills}>Chọn người theo sát</Button>}
+        </section>
+      );
+    }
+
+    return <section className="glass-panel rounded-2xl p-5"><h2 className="text-lg font-semibold text-foreground">{phaseMeta.title}</h2><p className="mt-2 text-sm text-muted-foreground">{phaseMeta.instruction}</p></section>;
+  };
+
+  const actionTitle = phase === 'teamSelection'
+    ? isCurrentPo ? 'Đến lượt bạn chọn đội' : 'Chờ PO chọn đội'
+    : phase === 'teamVoting'
+      ? teamVoteSubmitted ? 'Phiếu của bạn đã được ghi nhận' : 'Bỏ phiếu duyệt đội'
+      : phase === 'execution'
+        ? isOnTeam ? 'Đến lượt đội Sprint bỏ phiếu' : 'Chờ đội Sprint bỏ phiếu'
+        : phase === 'firstNight' && allowedActions.includes('setTtsTarget')
+          ? 'Bạn cần chọn người theo sát'
+          : phase === 'ended'
+            ? 'Ván chơi đã kết thúc'
+            : phaseMeta?.label ?? 'Đang đồng bộ phòng';
+  const actionDescription = phase === 'teamSelection'
+    ? `Chọn đúng ${requiredTeamSize} người trước khi hết 45 giây.`
+    : phase === 'teamVoting'
+      ? 'Lựa chọn được giữ kín cho đến khi cả phòng hoàn tất bỏ phiếu.'
+      : phase === 'execution'
+        ? isOnTeam ? 'Người thuộc phe Scrum chỉ có thể chọn Hoàn thành.' : 'Lá phiếu được mở sau khi hệ thống xáo ngẫu nhiên.'
+        : phase === 'firstNight' && allowedActions.includes('setTtsTarget')
+          ? 'Chọn mục tiêu trong thẻ Kỹ năng. Mục tiêu sẽ không hiện trên bảng công khai.'
+          : phase === 'ended'
+            ? 'Xem lại Sprint và vai trò, hoặc chơi lại cùng phòng.'
+            : instruction || 'Theo dõi đồng hồ và trao đổi khi chat khả dụng.';
+
+  const renderContextActions = () => {
+    if (phase === 'teamSelection' && (canSelectTeam || allowedActions.includes('usePmOverride'))) {
+      return <>
+        {canSelectTeam && <Button type="button" className="min-h-11" onClick={() => void finalizeTeam()} disabled={selectedPlayers.length !== requiredTeamSize || !canFinalizeTeam}>Chốt đội hình</Button>}
+        {allowedActions.includes('usePmOverride') && <Button type="button" variant="outline" className="min-h-11" onClick={openSkills}>Chiếm quyền chỉ định</Button>}
+      </>;
+    }
+    if (phase === 'teamVoting' && canVoteTeam) {
+      return <>
+        <Button type="button" className="min-h-11 bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={() => void store.voteTeam('approve')}>Đồng ý</Button>
+        <Button type="button" variant="outline" className="min-h-11 border-error/40 text-error hover:bg-error/10" onClick={() => void store.voteTeam('reject')}>Từ chối</Button>
+      </>;
+    }
+    if (phase === 'execution' && canVoteExecution && isOnTeam) {
+      return <>
+        <Button type="button" className="min-h-11 bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={() => void store.voteExecution('success')}>Hoàn thành</Button>
+        {faction === 'bad' && <Button type="button" variant="outline" className="min-h-11 border-error/40 text-error hover:bg-error/10" onClick={() => void store.voteExecution('fail')}>Thất bại</Button>}
+      </>;
+    }
+    if (phase === 'firstNight' && allowedActions.includes('setTtsTarget')) {
+      return <Button type="button" className="min-h-11" onClick={openSkills}>Chọn người theo sát</Button>;
+    }
+    if ((phase === 'planningDiscussion' || phase === 'sprintResult') && allowedActions.some((action) => ['usePmOverride', 'useBossSilence', 'useDeadlineSilence', 'useBaCheck', 'useQcRedo', 'useDaCheck'].includes(action))) {
+      return <Button type="button" variant="outline" className="min-h-11" onClick={openSkills}>Mở kỹ năng</Button>;
+    }
+    if (phase === 'ended') {
+      return <Button type="button" variant="outline" className="min-h-11" onClick={leave}>Về trang chủ</Button>;
+    }
+    if (phase === 'planningDiscussion') return <Button type="button" variant="outline" className="min-h-11" onClick={() => openChat('public')}>Mở chat</Button>;
+    if (phase === 'teamVoting' && teamVoteSubmitted) return <Badge variant="outline" className="min-h-10 px-3">Đã gửi phiếu</Badge>;
+    if (phase === 'execution' && (!isOnTeam || voteAck?.phase === 'execution')) return <Badge variant="outline" className="min-h-10 px-3">{isOnTeam ? 'Đã gửi phiếu' : 'Bạn đang chờ'}</Badge>;
+    return null;
+  };
+
+  const totalDuration = timerTotalMs;
+  const phaseIsGame = Boolean(phase && phase !== 'lobby');
+  const contextActions = renderContextActions();
 
   return (
-    <div className="command-room h-screen flex flex-col bg-background overflow-hidden">
-      {showRoleReveal && <RoleRevealPopup />}
+    <div className="game-experience flex min-h-dvh flex-col bg-background text-foreground">
+      <a href="#game-board" className="sr-only z-[100] rounded-lg bg-background p-3 text-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3">Bỏ qua điều hướng</a>
+      {phase === 'roleReveal' && store.showRoleReveal && <RoleRevealPopup />}
       <SkillResultToast />
       <VoteFeedback />
 
-      {/* ─── TopNavBar ─── */}
-      <nav className="command-topbar h-14 sm:h-16 shrink-0 flex justify-between items-center px-3 sm:px-6 z-30 gap-2" aria-label="Điều hướng phòng chơi">
-        <button
-          onClick={() => setMenuOpen(true)}
-          className="md:hidden p-2 rounded-lg hover:bg-surface-container-high text-muted-foreground"
-          aria-label="Menu"
-        >
-          <span className="material-symbols-outlined text-xl">menu</span>
+      <nav className="z-30 flex h-14 shrink-0 items-center gap-2 border-b border-outline-variant bg-surface-dim/90 px-2 backdrop-blur-xl sm:h-16 sm:gap-3 sm:px-4 lg:px-6" aria-label="Điều hướng phòng chơi">
+        <button type="button" onClick={() => setMenuOpen(true)} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden" aria-label="Mở bảng người chơi và vai trò">
+          <span className="material-symbols-outlined" aria-hidden="true">menu</span>
         </button>
-
-        <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-          <img
-            src="/brand/logo.svg"
-            alt="Say Agile One More Time"
-            className="h-7 sm:h-8 w-auto shrink-0"
+        <Link href="/" className="flex min-w-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Say Agile One More Time — trang chủ">
+          <img src="/brand/logo.svg" alt="" className="h-7 w-auto sm:h-8" />
+          <span className="hidden truncate text-sm font-semibold text-foreground xl:inline">Say Agile One More Time</span>
+        </Link>
+        <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+          <span className="hidden max-w-28 truncate font-mono text-xs text-muted-foreground sm:inline">{roomId}</span>
+          {phaseIsGame && <span className="hidden font-mono text-xs font-semibold text-secondary sm:inline">Sprint {sprintNumber}/{totalSprints}</span>}
+          {inPersonMode && <span className="hidden rounded-full border border-outline-variant px-2 py-1 text-[10px] text-muted-foreground sm:inline">Chơi trực tiếp</span>}
+          <ConnectionStatus status={connection} />
+          <button type="button" onClick={() => void handleShare()} className="grid h-10 w-10 place-items-center rounded-xl text-primary hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Chia sẻ lời mời phòng">
+            <span className="material-symbols-outlined" aria-hidden="true">ios_share</span>
+          </button>
+          <GameSoundToggle
+            phaseVersion={game?.phaseVersion ?? lobby?.phaseVersion ?? null}
+            phase={phase}
+            remainingMs={phaseDeadlineAt == null ? null : phaseRemainingMs}
+            voteAck={voteAck}
+            revealOutcome={game?.executionReveal?.outcome ?? null}
+            winner={game?.winner ?? null}
+            latestSkill={game?.publicEvents.filter((event) => event.type === 'skillUsed').at(-1)?.data.skill?.toString() ?? null}
           />
-          <div className="hidden md:flex items-center gap-6 ml-6">
-            <span className="text-muted-foreground font-mono text-sm">Room: {roomId}</span>
-            <span className="text-secondary font-bold font-mono text-sm">
-              Sprint {currentSprint + 1}/4
-            </span>
-            <span className="text-muted-foreground font-mono text-sm">
-              Delays: {consecutiveDelays}/3
-            </span>
-          </div>
-          {/* Mobile compact stats */}
-          <div className="md:hidden flex items-center gap-2 text-xs font-mono">
-            <span className="text-secondary">S{currentSprint + 1}/4</span>
-            <span className="text-muted-foreground">D{consecutiveDelays}/3</span>
-          </div>
+          <ThemeToggle />
+          <button type="button" onClick={() => openChat('public')} className="relative grid h-10 w-10 place-items-center rounded-xl text-muted-foreground hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden" aria-label="Mở chat">
+            <span className="material-symbols-outlined" aria-hidden="true">forum</span>
+            {messages.length > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" aria-hidden="true" />}
+          </button>
         </div>
-
-        <button
-          onClick={handleShare}
-          className="p-2 rounded-lg hover:bg-surface-container-high text-primary relative"
-          aria-label="Chia sẻ phòng"
-        >
-          <span className="material-symbols-outlined text-xl">share</span>
-        </button>
-
-        <ThemeToggle />
-
-        <button
-          onClick={() => setChatOpen(true)}
-          className="lg:hidden p-2 rounded-lg hover:bg-surface-container-high text-muted-foreground relative"
-          aria-label="Chat"
-        >
-          <span className="material-symbols-outlined text-xl">forum</span>
-          {messages.length > 0 && (
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-primary" />
-          )}
-        </button>
       </nav>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* ─── Left desktop sidebar ─── */}
-        <aside className="command-sidebar command-sidebar--left hidden md:flex flex-col w-72 lg:w-80 shrink-0 h-full overflow-hidden z-20">
-          {renderSidebarBody()}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <aside className="hidden w-72 shrink-0 overflow-hidden border-r border-outline-variant bg-surface-container-low/60 backdrop-blur-lg md:block xl:w-80" aria-label="Vai trò và bảng Sprint">
+          {renderSidebar()}
         </aside>
 
-        {/* ─── Main canvas ─── */}
-        <main className="command-canvas flex-1 overflow-y-auto relative p-3 sm:p-6 z-10">
-          <div className="command-canvas__inner">
-            <header className="command-phase-header">
-              <div className="min-w-0">
-                <p className="tactical-kicker">CURRENT PHASE · SPRINT {currentSprint + 1}</p>
-                <h1 className="command-phase-title">{phase ? PHASE_LABELS[phase] || phase : 'Đang kết nối'}</h1>
-              </div>
-              <div className="command-phase-header__meta">
-                <span>ROOM</span>
-                <strong>{roomId}</strong>
-              </div>
-            </header>
-
-            {phase && phase !== 'ended' && phase !== 'night' && (
-              <div className="command-progress-rail">{renderSprintBar()}</div>
-            )}
-
-            {/* Per-phase cooldown TimerBar */}
-            {phaseDeadlineAt && phaseStartedAt && phase && phase !== 'lobby' && phase !== 'ended' && (
-              <div className="command-timer-slot">
-              <TimerBar
-                remainingMs={phaseRemainingMs}
-                totalMs={Math.max(1, phaseDeadlineAt - phaseStartedAt)}
-                label={
-                  phase === 'night'
-                    ? currentSprint === 0
-                      ? 'Giờ Tan Ca đầu (skill)'
-                      : 'Giờ Tan Ca (skill)'
-                    : phase === 'planning'
-                    ? 'Vào ca (thảo luận + PO chọn)'
-                    : phase === 'teamVoting'
-                    ? 'Biểu quyết duyệt nhóm — 30s'
-                    : phase === 'execution'
-                    ? 'Bỏ phiếu kín — 30s'
-                    : phase === 'sprintResult'
-                    ? 'Sprint kết thúc — kỹ năng QC/DA (20s)'
-                    : phase === 'betweenSprintDiscussion'
-                    ? 'Bàn luận giữa Sprint — 90s'
-                    : phase === 'discussion'
-                    ? 'Thảo luận lật kèo'
-                    : PHASE_LABELS[phase] ?? phase
-                }
-                variant={phase as any}
+        <main id="game-board" className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-48 pt-3 sm:px-5 sm:pt-5 lg:pb-36" tabIndex={-1}>
+          <div className="mx-auto max-w-5xl space-y-4 sm:space-y-5">
+            {phaseMeta && (
+              <GamePhaseHeader
+                roomId={roomId}
+                phaseLabel={phaseMeta.label}
+                title={phase === 'teamSelection' ? `Sprint ${sprintNumber} · Chọn đội` : phaseMeta.title}
+                instruction={instruction}
+                sprintNumber={sprintNumber}
+                totalSprints={totalSprints}
+                goodWins={game?.goodWins ?? 0}
+                badWins={game?.badWins ?? 0}
+                remainingMs={phaseDeadlineAt == null ? null : phaseRemainingMs}
+                totalMs={totalDuration}
+                timerLabel={timerLabel}
+                connectionStatus={connection}
               />
-              </div>
             )}
-
-            <div className="command-board pb-32">
-            {phase === 'lobby' && renderLobby()}
-            {phase === 'planning' && renderPlanning()}
-            {phase === 'teamVoting' && renderTeamVoting()}
-            {phase === 'execution' && renderExecution()}
-            {phase === 'sprintResult' && renderSprintResult()}
-            {phase === 'betweenSprintDiscussion' && renderBetweenSprintDiscussion()}
-            {phase === 'discussion' && renderDiscussion()}
-            {phase === 'ended' && renderEnded()}
-            {phase === 'night' && (
-              <div className="glass-panel rounded-xl p-6 sm:p-8 text-center">
-                <span className="material-symbols-outlined text-4xl text-primary mb-3 block">
-                  bedtime
-                </span>
-                <p className="text-muted-foreground">Giờ Tan Ca — dùng skill hoặc chờ...</p>
-              </div>
-            )}
-            {!phase && (
-              <div className="glass-panel rounded-xl p-8 text-center">
-                <span className="material-symbols-outlined text-4xl text-muted-foreground mb-4 block animate-spin">
-                  progress_activity
-                </span>
-                <p className="text-muted-foreground">Đang kết nối phòng...</p>
-                <p className="text-xs text-muted-foreground mt-2 font-mono">
-                  Nếu bị treo quá lâu, hãy{' '}
-                  <Link href="/" className="text-primary underline">
-                    về trang chủ
-                  </Link>{' '}
-                  và join lại.
-                </p>
-              </div>
-            )}
-            </div>
+            {error && <div className="rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error" role="alert">{error}</div>}
+            {renderPhase()}
+            {shareToast && <p className="rounded-xl border border-secondary/30 bg-secondary/5 p-3 text-sm text-secondary" role="status">{shareToast}</p>}
           </div>
         </main>
 
-        {/* ─── Right desktop chat sidebar ─── */}
-        <aside className="command-sidebar command-sidebar--right hidden lg:flex flex-col w-80 shrink-0 h-full overflow-hidden z-20">
-          {renderChatBody()}
+        <aside className="hidden w-80 shrink-0 flex-col overflow-hidden border-l border-outline-variant bg-surface-container-low/60 backdrop-blur-lg lg:flex" aria-label="Chat và hoạt động">
+          {renderChat()}
         </aside>
       </div>
 
-      {/* ─── Mobile drawers ─── */}
-      <MobileDrawer open={menuOpen} onOpenChange={setMenuOpen} side="left" title="Bảng điều khiển">
-        {renderSidebarBody()}
+      {phaseIsGame && <ContextActionBar title={actionTitle} description={actionDescription} waiting={!contextActions}>{contextActions}</ContextActionBar>}
+
+      <MobileDrawer open={menuOpen} onOpenChange={setMenuOpen} side="left" title="Vai trò và bảng Sprint">
+        <div className="min-h-0">{renderSidebar()}</div>
       </MobileDrawer>
-      <MobileDrawer open={chatOpen} onOpenChange={setChatOpen} side="bottom" title="Liên lạc">
-        <div className="flex flex-col h-[70vh]">{renderChatBody()}</div>
+      <MobileDrawer open={chatOpen} onOpenChange={setChatOpen} side="bottom" title={activeChatTab === 'bad' ? 'Chat riêng phe Phá Dự Án' : 'Chat và hoạt động'}>
+        <div className="flex h-[70dvh] min-h-0 flex-col">{renderChat()}</div>
       </MobileDrawer>
-
-
-      {/* ─── Share toast ─── */}
-      {shareToast && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[60] pointer-events-none">
-          <div className="glass-panel rounded-xl px-4 py-2 border border-secondary/40 flex items-center gap-2 shadow-lg">
-            <span className="material-symbols-outlined text-secondary text-base">check_circle</span>
-            <span className="text-xs font-mono text-foreground">{shareToast}</span>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Rename dialog ─── */}
-      {renameOpen && (
-        <div
-          className="fixed inset-0 z-[70] bg-overlay-soft flex items-center justify-center p-4"
-          onClick={() => !renameBusy && setRenameOpen(false)}
-        >
-          <div
-            className="glass-panel rounded-2xl p-6 w-full max-w-sm border border-outline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-primary">edit</span>
-              <h3 className="text-lg font-bold text-foreground">Đổi tên hiển thị</h3>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              Tên phải là duy nhất trong phòng, không phân biệt viết hoa hoặc khoảng trắng.
-            </p>
-            <input
-              type="text"
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleRename();
-                if (e.key === 'Escape') setRenameOpen(false);
-              }}
-              maxLength={20}
-              autoFocus
-              className="w-full bg-surface-container border border-outline rounded-lg py-2 px-3 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
-            {renameError && (
-              <p className="mt-2 text-xs text-error" role="alert">
-                {renameError}
-              </p>
-            )}
-            <div className="flex gap-2 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setRenameOpen(false)}
-                disabled={renameBusy}
-                className="flex-1"
-              >
-                Hủy
-              </Button>
-              <Button
-                onClick={handleRename}
-                disabled={!renameDraft.trim() || renameBusy}
-                className="flex-1"
-              >
-                {renameBusy ? 'Đang lưu...' : 'Lưu'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Bottom voting bar ─── */}
-      {isVotingPhase && (
-        <div className="command-action-dock shrink-0 p-3 sm:p-4 z-30">
-          <div className="command-action-dock__inner max-w-4xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <span className="text-xs text-muted-foreground font-mono hidden sm:block">
-              {phase === 'teamVoting'
-                ? 'Bỏ phiếu duyệt nhóm (hết giờ = Đồng ý)...'
-                : 'Bỏ phiếu kín kết quả Sprint (hết giờ = Success)...'}
-            </span>
-            {!isSilenced && (
-              <div className="flex gap-2 sm:gap-3 justify-stretch sm:justify-end">
-                {phase === 'teamVoting' ? (
-                  <>
-                    <Button
-                      onClick={() => voteTeam('agree')}
-                      disabled={voteAck?.phase === 'teamVoting'}
-                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_up</span>
-                      ĐỒNG Ý
-                    </Button>
-                    <Button
-                      onClick={() => voteTeam('reject')}
-                      disabled={voteAck?.phase === 'teamVoting'}
-                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined mr-1 sm:mr-2">thumb_down</span>
-                      TỪ CHỐI
-                    </Button>
-                  </>
-                ) : (
-                  isOnTeam && (
-                    <>
-                      <Button
-                        onClick={() => voteExecution('success')}
-                        disabled={voteAck?.phase === 'execution'}
-                        className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/90 font-semibold tracking-wide disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined mr-1 sm:mr-2">check_circle</span>
-                        HOÀN THÀNH
-                      </Button>
-                      {!isGood && (
-                        <Button
-                          onClick={() => voteExecution('fail')}
-                          disabled={voteAck?.phase === 'execution'}
-                          className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-6 py-3 text-[11px] sm:text-sm whitespace-nowrap rounded-lg border border-error text-error hover:bg-error/10 font-semibold tracking-wide disabled:opacity-50"
-                        >
-                          <span className="material-symbols-outlined mr-1 sm:mr-2">
-                            local_fire_department
-                          </span>
-                          CHÁY DEADLINE
-                        </Button>
-                      )}
-                    </>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ─── End-of-game modal: reset room or leave ─── */}
-      {endModalOpen && phase === 'ended' && (
-        <div
-          className="fixed inset-0 z-[80] bg-overlay-medium backdrop-blur-sm flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="glass-panel rounded-2xl p-6 sm:p-8 w-full max-w-md border border-outline text-center shadow-2xl">
-            <div
-              className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full mx-auto mb-4 flex items-center justify-center ${
-                badWins >= 2 ? 'glow-red' : 'glow-green'
-              }`}
-            >
-              {badWins >= 2 ? (
-                <span
-                  className="material-symbols-outlined text-4xl sm:text-5xl text-error"
-                  style={{ fontVariationSettings: 'FILL 1' }}
-                >
-                  dangerous
-                </span>
-              ) : (
-                <span
-                  className="material-symbols-outlined text-4xl sm:text-5xl text-secondary"
-                  style={{ fontVariationSettings: 'FILL 1' }}
-                >
-                  emoji_events
-                </span>
-              )}
-            </div>
-            <h2
-              className={`text-2xl sm:text-3xl font-bold mb-2 tracking-tight ${
-                badWins >= 2 ? 'text-error' : 'text-secondary'
-              }`}
-            >
-              {badWins >= 2 ? 'PHE PHÁ DỰ ÁN THẮNG!' : 'SCRUM TEAM THẮNG!'}
-            </h2>
-            <p className="text-muted-foreground text-sm font-mono mb-1">
-              Tỉ số: Tốt {goodWins} · Xấu {badWins}
-            </p>
-            <p className="text-muted-foreground text-sm mb-6">Chơi ván mới?</p>
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-              <Button
-                onClick={handleResetRoom}
-                disabled={resetBusy}
-                className="flex-1 h-12 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold tracking-wide"
-              >
-                <span className="material-symbols-outlined mr-2">refresh</span>
-                {resetBusy ? 'Đang reset...' : 'Về lobby'}
-              </Button>
-              <Button
-                onClick={handleRequestLeave}
-                variant="outline"
-                className="flex-1 h-12 font-semibold tracking-wide border-outline text-foreground hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined mr-2">logout</span>
-                Tìm phòng khác
-              </Button>
-            </div>
-            <button
-              onClick={() => setEndModalOpen(false)}
-              className="mt-4 text-xs text-muted-foreground hover:text-foreground underline"
-            >
-              Xem Role Reveal trước
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── Leave-room confirm dialog ─── */}
-      {leaveConfirmOpen && (
-        <div
-          className="fixed inset-0 z-[90] bg-overlay-strong backdrop-blur-sm flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setLeaveConfirmOpen(false)}
-        >
-          <div
-            className="glass-panel rounded-2xl p-6 w-full max-w-sm border border-outline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="material-symbols-outlined text-error">warning</span>
-              <h3 className="text-lg font-bold text-foreground">Rời phòng?</h3>
-            </div>
-            <p className="text-sm text-muted-foreground mb-5">
-              Bạn sẽ về trang chủ và có thể tìm phòng khác. Kết quả ván vừa rồi sẽ vẫn còn — có thể join lại phòng này bằng mã <span className="font-mono text-primary">{roomId}</span> nếu muốn xem lại.
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setLeaveConfirmOpen(false)}
-                className="flex-1"
-              >
-                Ở lại
-              </Button>
-              <Button
-                onClick={handleConfirmLeave}
-                className="flex-1 bg-error on-color hover:bg-error/90"
-              >
-                Rời đi
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
+  );
+}
+
+function ChatTabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`min-h-10 flex-1 whitespace-nowrap rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-surface-container-high hover:text-foreground'}`}
+    >
+      {children}
+    </button>
   );
 }

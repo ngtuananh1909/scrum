@@ -1,30 +1,5 @@
-import { NextResponse } from 'next/server';
-import { saboteurGuess, sanitizeRoomForPlayer } from '@/lib/store';
+import { goneResponse } from '@/server/http';
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const { playerId, guessedSmId } = await request.json();
-
-    if (!playerId || !guessedSmId) {
-      return NextResponse.json({ error: 'Missing playerId or guessedSmId' }, { status: 400 });
-    }
-
-    const result = await saboteurGuess(id, playerId, guessedSmId);
-
-    if (!result) {
-      return NextResponse.json({ error: 'Cannot guess' }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      ...result,
-      room: sanitizeRoomForPlayer(result.room, playerId),
-    });
-  } catch (error) {
-    console.error('[api/rooms/[id]/saboteur-guess POST]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+export async function POST() {
+  return goneResponse();
 }

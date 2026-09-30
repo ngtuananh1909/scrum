@@ -2,7 +2,7 @@
 
 ## **DỰ ÁN: SỐ HÓA BOARDGAME "AGILE THỰC CHIẾN"**
 
-*Phiên bản: 1.2 — Trạng thái: Sẵn sàng lập trình*
+*Phiên bản: 1.3 — Trạng thái: Sẵn sàng lập trình*
 
 ## **1\. THIẾT LẬP MẶC ĐỊNH (DEFAULT APP SETTINGS)**
 
@@ -28,7 +28,7 @@
 
 Hệ thống điều khiển trận đấu tự động luân chuyển qua các màn hình giao diện (Phase) theo sơ đồ sau:
 
-\[Phát Bài Ẩn\] ➔ \[Giờ Tan Ca Đầu Tiên\] ➔ \[VÒNG LẶP SPRINT (Tối đa 4 vòng)\]  
+\[Phát Bài Ẩn\] ➔ \[Giờ Tan Ca Đầu Tiên\] ➔ \[VÒNG LẶP SPRINT (4 vòng chính; vòng 5 nếu hòa 2–2)\]
                                                 │  
                  ┌──────────────────────────────┴──────────────────────────────┐  
                  ▼                                                             ▼  
@@ -41,7 +41,7 @@ Hệ thống điều khiển trận đấu tự động luân chuyển qua các 
 * **Giao diện Client:** Hiển thị duy nhất Avatar của nhân vật Business Analyst (BA) kèm dòng chữ: *"Nội gián: Đây chính là BA\!"*.  
 * **Giao diện Thực tập sinh (TTS):** Ép buộc click chọn 1 người chơi trong phòng để "theo sát". Hệ thống khóa và ghi nhận ID mục tiêu này.
 
-### **2.2. Vòng lặp các Sprint (Tối đa 4 Sprint)**
+### **2.2. Vòng lặp các Sprint (4 Sprint chính; Sprint 5 nếu hòa 2–2)**
 
 Mỗi Sprint bắt buộc phải trải qua 3 giai đoạn nhỏ:
 
@@ -87,14 +87,14 @@ Mỗi Sprint bắt buộc phải trải qua 3 giai đoạn nhỏ:
 
 📌 **Quy tắc hệ thống bổ sung:** Nếu ở Sprint liền trước có nhân vật *Technical Debt* tham gia, số lượng nhân sự tại cột tương ứng của Sprint tiếp theo sẽ được hệ thống tự động cộng thêm \+1 (Ví dụ: Phòng 5 người, Sprint 1 có Tech Debt suy ra Sprint 2 hệ thống sẽ bắt buộc PO phải chọn đủ 4 người thay vì 3).
 
-Mỗi trận đấu gồm tối đa 4 Sprint. Mỗi Sprint bắt buộc phải trải qua tuần tự 3 giai đoạn được hệ thống kiểm soát bằng đồng hồ đếm ngược (Timer).
+Mỗi trận đấu gồm 4 Sprint chính. Nếu sau Sprint 4 hai phe hòa 2–2, chơi Sprint 5 phân định thắng thua. Số nhân sự cơ bản của Sprint 5 lặp lại cột Sprint 4 theo số người chơi; hiệu ứng Technical Debt từ Sprint 4 vẫn cộng thêm 1 người. Mỗi Sprint bắt buộc phải trải qua tuần tự 3 giai đoạn được hệ thống kiểm soát bằng đồng hồ đếm ngược (Timer).
 
 ### **Giai đoạn 1: Sprint Planning (Họp Kế Hoạch)**
 
 #### **1\. Hành vi Chỉ định Quản trò luân phiên (PO)**
 
 * **Sprint 1:** Hệ thống chọn ngẫu nhiên một người (hoặc người chủ phòng) làm PO. Trên Avatar của người này sẽ xuất hiện Vương miện/Huy hiệu PO.  
-* **Sprint 2, 3, 4:** Hệ thống tự động chuyển Huy hiệu PO sang người ngồi kế tiếp bên tay trái theo sơ đồ vòng tròn của phòng chơi.
+* **Sprint 2, 3, 4 và Sprint 5 nếu có:** Hệ thống tự động chuyển Huy hiệu PO sang người ngồi kế tiếp bên tay trái theo sơ đồ vòng tròn của phòng chơi.
 
 #### **2\. Kiểm tra điều kiện Khống chế Thảo luận**
 
@@ -137,6 +137,8 @@ Sau khi mọi người bấm xong, hệ thống tiến hành gom các lá phiế
 
 Hệ thống hiển thị kết quả Sprint lên màn hình chính (Ví dụ: "Sprint 1: THÀNH CÔNG" hoặc "Sprint 1: CHÁY DEADLINE"). Tại thời điểm này, hệ thống sẽ mở ra một cửa sổ thời gian chờ (15-30 giây) để ghi nhận các hành vi kích hoạt kỹ năng đặc biệt:
 
+Điều kiện thắng sau Sprint chỉ được chốt khi cửa sổ kỹ năng 20 giây kết thúc; QC có thể hủy cả kết quả Sprint vừa đạt ngưỡng thắng trong cửa sổ này.
+
 * **Hành vi kích hoạt của Quality Controller (QC \- Yêu cầu làm lại):** QC có một nút bấm "Hủy kết quả & Làm lại" (Chỉ dùng được 1 lần/game). Nếu QC bấm nút này, hệ thống sẽ xóa bỏ kết quả vừa tính, đưa trạng thái Sprint hiện tại về lại từ đầu Giai đoạn 1 (Lập kế hoạch lại cho chính Sprint đó).  
 * **Hành vi tích lũy của Nợ kỹ thuật (Technical Debt):** Hệ thống kiểm tra xem trong nhóm vừa đi Sprint có *Tech Debt* không. Nếu có, hệ thống sẽ kích hoạt một biến cờ trạng thái ẩn: Bắt buộc ở cấu hình Sprint tiếp theo, số lượng nhân sự tham gia phải tự động cộng thêm \+1 người.
 
@@ -146,6 +148,7 @@ Hệ thống sẽ liên tục kiểm tra điều kiện kết thúc game sau m�
 
 * **Phe Phá Dự Án thắng ngay lập tức khi:** Tích lũy đủ 3 Sprint bị Cháy deadline HOẶC thanh Hoãn Sprint chạm mức 4\. Hệ thống dừng game và hiện màn hình ăn mừng của phe Xấu.  
 * **Trường hợp Scrum Team tích lũy đủ 3 Sprint thành công:** Hệ thống chưa tuyên bố thắng cuộc ngay mà sẽ chuyển sang **Vòng lật kèo cuối game (Vòng Ám sát)**.
+* **Điều kiện phân vai:** Mỗi trận phải có đúng 1 Scrum Master và đúng 1 Người trễ task để vòng lật kèo cuối game luôn hợp lệ; cấu hình vai tùy chỉnh cũng phải tuân thủ điều kiện này.
 
 ### **Luồng hành vi tại Vòng lật kèo cuối game:**
 
@@ -155,4 +158,4 @@ Hệ thống sẽ liên tục kiểm tra điều kiện kết thúc game sau m�
 4. **Xử lý kết quả từ Hệ thống:**  
    * Nếu chọn **ĐÚNG** người là Scrum Master: Phe Phá Dự Án lật kèo chiến thắng, dự án thất bại.  
    * Nếu chọn **SAI**: Phe Scrum Team chính thức giành chiến thắng chung cuộc, dự án được release thành công.
-
+   * Nếu hết 60 giây mà không có lượt chỉ điểm hợp lệ: Phe Scrum Team thắng vì phe Phá Dự Án đã bỏ lỡ cơ hội lật kèo.

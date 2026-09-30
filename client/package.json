@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --exclude \"tests/integration/**\"",
+    "test:integration": "node tests/helpers/with-local-supabase-env.mjs -- vitest run tests/integration",
+    "test:db-policy": "supabase --workdir .. test db --local",
+    "test:e2e": "node tests/helpers/with-local-supabase-env.mjs -- playwright test",
+    "supabase:start": "supabase --workdir .. start --exclude studio,storage-api,imgproxy,edge-runtime,logflare,vector,mailpit,supavisor",
+    "supabase:stop": "supabase --workdir .. stop"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -15,6 +22,8 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.469.0",
     "next": "16.2.9",
+    "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "shadcn": "^4.11.0",
@@ -23,13 +32,22 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^24",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "jsdom": "^30.0.1",
+    "supabase": "2.117.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.2"
   }
 }
