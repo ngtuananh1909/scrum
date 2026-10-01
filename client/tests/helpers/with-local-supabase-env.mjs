@@ -4,6 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 const clientDirectory = fileURLToPath(new URL('../..', import.meta.url));
 const repositoryDirectory = path.resolve(clientDirectory, '..');
+const localBinaryDirectory = path.join(clientDirectory, 'node_modules', '.bin');
+const environment = {
+  ...process.env,
+  PATH: [localBinaryDirectory, process.env.PATH].filter(Boolean).join(path.delimiter),
+};
 const args = process.argv.slice(2);
 
 if (args[0] !== '--' || !args[1]) {
@@ -14,7 +19,12 @@ if (args[0] !== '--' || !args[1]) {
 const status = spawnSync(
   'supabase',
   ['--workdir', repositoryDirectory, 'status', '--output', 'env'],
-  { cwd: repositoryDirectory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+  {
+    cwd: repositoryDirectory,
+    encoding: 'utf8',
+    env: environment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }
 );
 
 if (status.error || status.status !== 0) {
@@ -52,7 +62,7 @@ if (missing.length > 0) {
 const command = spawnSync(args[1], args.slice(2), {
   cwd: clientDirectory,
   env: {
-    ...process.env,
+    ...environment,
     NEXT_PUBLIC_SUPABASE_URL: local.API_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: local.ANON_KEY,
     SUPABASE_SERVICE_ROLE_KEY: local.SERVICE_ROLE_KEY,
