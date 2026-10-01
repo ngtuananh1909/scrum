@@ -1,27 +1,5 @@
-import { NextResponse } from 'next/server';
-import { skillPmDefer, sanitizeRoomForPlayer } from '@/lib/store';
+import { goneResponse } from '@/server/http';
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const { playerId } = await request.json();
-
-    if (!playerId) {
-      return NextResponse.json({ error: 'Missing playerId' }, { status: 400 });
-    }
-
-    const room = await skillPmDefer(id, playerId);
-
-    if (!room) {
-      return NextResponse.json({ error: 'Cannot defer PM override' }, { status: 400 });
-    }
-
-    return NextResponse.json({ room: sanitizeRoomForPlayer(room, playerId) });
-  } catch (error) {
-    console.error('[api/rooms/[id]/skill-pm-defer POST]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+export async function POST() {
+  return goneResponse();
 }

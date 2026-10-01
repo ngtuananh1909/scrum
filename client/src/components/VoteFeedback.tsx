@@ -7,9 +7,9 @@ export function VoteFeedback() {
   const voteAck = useGameStore((s) => s.voteAck);
   if (!voteAck) return null;
 
-  const isAgree = voteAck.vote === 'agree' || voteAck.vote === 'success';
+  const isAgree = voteAck.vote === 'agree' || voteAck.vote === 'approve' || voteAck.vote === 'success';
   const label =
-    voteAck.vote === 'agree'
+    voteAck.vote === 'approve' || voteAck.vote === 'agree'
       ? 'ĐỒNG Ý'
       : voteAck.vote === 'reject'
       ? 'TỪ CHỐI'

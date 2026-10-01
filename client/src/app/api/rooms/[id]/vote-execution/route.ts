@@ -1,30 +1,5 @@
-import { NextResponse } from 'next/server';
-import { voteExecution, sanitizeRoomForPlayer } from '@/lib/store';
+import { goneResponse } from '@/server/http';
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const { playerId, vote } = await request.json();
-
-    if (!playerId || !vote) {
-      return NextResponse.json({ error: 'Missing playerId or vote' }, { status: 400 });
-    }
-
-    const room = await voteExecution(id, playerId, vote);
-
-    if (!room) {
-      return NextResponse.json({ error: 'Cannot vote' }, { status: 400 });
-    }
-
-    return NextResponse.json({
-      room: sanitizeRoomForPlayer(room, playerId),
-      ack: { vote, at: Date.now(), phase: 'execution' },
-    });
-  } catch (error) {
-    console.error('[api/rooms/[id]/vote-execution POST]', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
+export async function POST() {
+  return goneResponse();
 }

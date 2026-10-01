@@ -1,123 +1,36 @@
 # Setup Guide — Say Agile One More Time
 
-A real-time multiplayer social deduction game (Werewolf/Avalon-style, Agile-themed) deployed on Vercel + Supabase. Free tier friendly.
+The maintained overview and commands are in the [root README](../../README.md). This guide covers the Supabase setup and security cutover.
 
-## 1. Local prerequisites
+## Local development
 
-- Node.js 20+ and npm
-- A Supabase project (free tier): https://supabase.com
-- A Vercel account (free tier): https://vercel.com — only needed for deployment
+Requirements: Node 24, npm, Docker, and the Chromium browser installed by Playwright for E2E tests.
 
-## 2. Create the Supabase project
+1. From client/, run npm install.
+2. From client/, run npm run supabase:start. The CLI starts local Postgres, Auth, REST, and Realtime and applies supabase/migrations.
+3. Copy client/.env.local.example to client/.env.local. Fill the Supabase URL, anon key, service-role key, and Postgres DATABASE_URL from the local Supabase status output. Keep that file private.
+4. From client/, run npm run dev, then open http://localhost:3000.
+5. Create a room in one browser and join it from at least four other isolated browser contexts before starting a game.
 
-1. Go to https://supabase.com/dashboard and click **New Project**.
-2. Pick a name (e.g. `agile-game`), set a strong database password, choose the closest region.
-3. Wait ~2 min for provisioning.
-4. Go to **SQL Editor** → **New query**.
-5. Paste the entire contents of [`supabase/schema.sql`](./supabase/schema.sql) → click **Run**. You should see two tables created (`rooms`, `messages`), indexes, Realtime publication entries, and RLS policies.
+Supabase Anonymous Auth is enabled in [config.toml](../../supabase/config.toml). It creates a browser identity without asking the player to create a visible account. Clearing browser data or moving to another browser loses that identity; a room code does not prove ownership of the former seat.
 
-## 3. Get your Supabase API keys
+## Hosted Supabase project
 
-In your Supabase dashboard:
+1. Enable Anonymous Sign-Ins in Supabase Auth settings.
+2. On a new database, apply [schema.sql](../../supabase/schema.sql). On an existing deployment, review and apply the versioned migration in [supabase/migrations](../../supabase/migrations/) during a maintenance window.
+3. The migration archives the old rooms/messages tables, removes their open Realtime publication and policies, and creates the new restricted tables. Existing active games cannot be safely resumed because their old player IDs were not authenticated; notify players and start fresh rooms.
+4. Confirm Realtime publishes only room_public_state, player_secrets, and room_messages. RLS must limit the last two to the caller's own secret row and authorized message audience.
+5. Configure the app's server-only DATABASE_URL with the Supabase transaction pooler connection. Keep SUPABASE_SERVICE_ROLE_KEY on the server for Auth token verification. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for browser Auth/Realtime.
+6. Deploy client/ on a Node-capable host. Do not send database or service-role credentials to the browser.
 
-1. Go to **Project Settings** → **API**.
-2. Copy:
-   - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
-   - **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - **service_role secret** key → `SUPABASE_SERVICE_ROLE_KEY` (server-only — never expose)
+## Verify before inviting players
 
-## 4. Local development
+From client/, with local Supabase running:
 
-```bash
-cd client
-cp .env.local.example .env.local
-# Edit .env.local and paste the three values from step 3.
-npm install
-npm run dev
-```
+- npm run test:unit — pure rules, presets, visibility, and client helpers.
+- npm run test:db-policy — grants, RLS, role constraints, and publication allowlist.
+- npm run test:integration — real-database API authorization, concurrent votes, replay, timeout races, and rollback.
+- npm run test:e2e — five isolated browser contexts through the game flow.
+- npm run lint and npm run build — code quality and production compilation.
 
-Open http://localhost:3000. Open a second browser (incognito) to test multiplayer with two players.
-
-### Try it out
-1. In browser A, enter a name, click **Generate** for a room code, click **Create Room**. You'll be redirected to `/game/<code>`.
-2. In browser B, enter a different name, type the same room code, click **Join Room**.
-3. Once 5+ players are in, anyone can click **Start Game**. Roles are assigned.
-4. Open the chat panel below the players grid — send a message in A, see it appear in B (Realtime).
-5. Refresh browser A — you rejoin the same room with the same role (player ID persists in localStorage).
-
-## 5. Deploy to Vercel
-
-1. Push this repo to GitHub.
-2. Go to https://vercel.com/new and **Import** the repo.
-3. In **Configure Project**:
-   - **Root Directory**: set to `client`
-   - **Framework Preset**: Next.js (auto-detected)
-4. In **Environment Variables**, add the three from step 3:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-5. Click **Deploy**. First deploy takes ~2 min.
-6. Once live, share the Vercel URL. Anyone can create a room and play.
-
-## 6. Verify it works
-
-After deploy, open two browsers to your Vercel URL and run through:
-
-- [ ] Create room in browser A, join same code in browser B
-- [ ] Chat messages sync both ways within ~500ms
-- [ ] Start game → roles appear in browser A and B at the same time
-- [ ] Vote on a proposed team → tally broadcasts to both clients
-- [ ] Hard-refresh one browser → same player rejoins, role preserved
-- [ ] Supabase dashboard → Table Editor → rows appearing in `rooms` and `messages` in real time
-
-## 7. How it works (architecture)
-
-```
-Browser                Next.js API (Vercel)         Supabase
-   │                          │                        │
-   ├── POST /api/rooms ───────►                        │
-   │                          ├── UPSERT rooms ────────►
-   │                          │                        │
-   │   ◄── Realtime channel (postgres_changes) ────────┤
-   │                          │                        │
-   ├── POST /api/rooms/:id/chat ►                      │
-   │                          ├── INSERT messages ─────►
-   │                          │                        │
-   │   ◄── Realtime channel (postgres_changes) ────────┤
-   │                          │                        │
-```
-
-- **Persistence**: one Postgres row per room in `public.rooms`, full game state stored as JSONB in `state` column. Every action = one UPSERT.
-- **Real-time**: Supabase broadcasts Postgres row changes via WebSocket. The browser subscribes once per room and updates its Zustand store.
-- **Polling fallback**: if the Realtime channel errors, the client falls back to 2-second polling against `GET /api/rooms/:id`.
-- **Identity**: a UUID v4 is generated in `localStorage` on first visit. Sent in every request body. The server matches on it for rejoins — refresh in the same room preserves your role.
-- **Chat**: separate `public.messages` table. Realtime broadcasts new inserts to all subscribers of the same room channel.
-
-## 8. Free-tier limits (Vercel + Supabase)
-
-| Resource | Limit | Headroom |
-|---|---|---|
-| Vercel function invocations | 100k/day | ~400 full games/day |
-| Supabase DB size | 500 MB | ~30k rooms or ~5M messages |
-| Supabase Realtime connections | 200 concurrent | 200 simultaneous rooms |
-| Supabase Realtime messages | 5M/month | ~50 events × 400 games = 20k/day = 600k/month |
-
-Plenty for a public demo.
-
-## 9. Troubleshooting
-
-- **"Room not found"** — the room's row hasn't been created yet. Make sure step 2 (schema SQL) ran successfully.
-- **Realtime never fires** — check that the `supabase_realtime` publication includes both tables. In Supabase dashboard → **Database** → **Publications** → `supabase_realtime` should list `public.rooms` and `public.messages`.
-- **"Failed to create room"** — usually means a row with that `id` already exists in `rooms`. Pick a different code or delete the row in Supabase Table Editor.
-- **Chat works but room state doesn't update** — Realtime UPDATE on `rooms` requires the row to actually change. Check that `writeRoom` is being called (look in Vercel function logs).
-- **`supabaseAdmin` env errors at build time** — `.env.local` must exist before `npm run build` runs. For Vercel, set env vars in project settings, not in code.
-
-## 10. Files of interest
-
-- `client/src/lib/store.ts` — game state machine + Supabase read/write helpers
-- `client/src/lib/supabase.ts` — server Supabase client (service role)
-- `client/src/lib/supabaseBrowser.ts` — client Supabase client (anon)
-- `client/src/lib/identity.ts` — localStorage UUID helper
-- `client/src/store/gameStore.ts` — Zustand store with Realtime subscription
-- `client/src/components/ChatPanel.tsx` — chat UI
-- `supabase/schema.sql` — database schema (run once per Supabase project)
+A secure room snapshot and raw Realtime payload must not expose another player's role, named execution ballot, private BA/DA result, or TTS target. A copied player ID must not authorize a command. Legacy action-specific routes return HTTP 410.

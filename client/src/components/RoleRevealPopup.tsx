@@ -13,8 +13,9 @@ function getAvatarUrl(name: string): string {
 
 export function RoleRevealPopup() {
   const showRoleReveal = useGameStore((s) => s.showRoleReveal);
-  const myRole = useGameStore((s) => s.myRole);
-  const isGood = useGameStore((s) => s.isGood);
+  const privateState = useGameStore((s) => s.privateState);
+  const myRole = privateState?.ownRole ?? null;
+  const isGood = privateState?.faction !== 'bad';
   const playerName = useGameStore((s) => s.playerName);
   const closeRoleReveal = useGameStore((s) => s.closeRoleReveal);
 
@@ -36,9 +37,9 @@ export function RoleRevealPopup() {
           {/* Header */}
           <div className="space-y-1">
             <p className="text-xs font-mono text-muted-foreground tracking-widest uppercase">
-              Sprint 1 has begun
+              Vai trò bí mật · chỉ bạn nhìn thấy
             </p>
-            <h2 className="text-2xl font-bold text-foreground">Your Role</h2>
+            <h2 className="text-2xl font-bold text-foreground">Vai trò của bạn</h2>
           </div>
 
           {/* Avatar */}
@@ -58,7 +59,7 @@ export function RoleRevealPopup() {
               {myRole || 'Unknown'}
             </p>
             <p className={`text-xs font-mono mt-1 ${isGood ? 'text-secondary/70' : 'text-error/70'}`}>
-              {isGood ? 'Good Team — protect the sprint!' : 'Bad Team — sabotage the sprint!'}
+              {isGood ? 'Phe Scrum · bảo vệ dự án' : 'Phe Phá Dự Án · tìm cách cản trở'}
             </p>
           </div>
 
@@ -98,7 +99,7 @@ export function RoleRevealPopup() {
             className={`w-full max-w-xs mt-2 ${isGood ? 'bg-secondary hover:bg-secondary/90 text-secondary-foreground' : 'bg-error hover:bg-error/90 text-error-foreground'}`}
           >
             <span className="material-symbols-outlined mr-2">check</span>
-            Bắt đầu Sprint
+            Tôi đã nhớ vai trò
           </Button>
         </div>
       </DialogContent>

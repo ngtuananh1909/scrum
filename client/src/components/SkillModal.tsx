@@ -5,7 +5,11 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useGameStore } from '@/store/gameStore';
 import { getAvatarUrl } from '@/lib/utils';
-import type { Player } from '@/lib/types';
+
+export interface SkillCandidate {
+  id: string;
+  name: string;
+}
 
 interface SkillModalProps {
   open: boolean;
@@ -13,7 +17,7 @@ interface SkillModalProps {
   title: string;
   description: string;
   // Players to choose from; defaults to all players except self.
-  candidates?: Player[];
+  candidates?: SkillCandidate[];
   // Number of targets to pick. 0 = confirm-only modal (no picker).
   pickCount: number;
   confirmLabel: string;
